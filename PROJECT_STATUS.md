@@ -366,7 +366,7 @@
   - Tests: 6 test cases
   - Estimated: 6 hours
 
-- [ ] Task 8.2: MockDataStrategy framework
+- [x] Task 8.2: MockDataStrategy framework
   - Strategy pattern: pretrain_then_finetune, mixed_training, residual_calibration
   - Sample weighting
   - ResidualCalibrator: trains correction model on (obs - synthetic)
