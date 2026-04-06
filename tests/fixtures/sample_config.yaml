@@ -1,0 +1,27 @@
+pipeline: test_pipeline
+  data_sources:
+    - name: test_source
+      provider: csv
+      connection_string: tests/fixtures/test.csv
+
+  stages:
+    - name: rf_baseline
+      framework: mlnet
+      model_type: fast_forest
+      data_source: test_source
+      features: [feature_a, feature_b, feature_c]
+      target: target
+      hyperparameters:
+        number_of_trees: 10
+        number_of_leaves: 4
+        feature_fraction: 0.7
+
+  compose: rf_baseline
+
+  evaluation:
+    strategy: temporal_cv
+    gap_days: 3
+
+  output:
+    format: json
+    path: output/predictions.json

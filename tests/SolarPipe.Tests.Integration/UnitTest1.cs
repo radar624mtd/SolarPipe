@@ -1,10 +1,12 @@
 namespace SolarPipe.Tests.Integration;
 
-public class UnitTest1
+[Trait("Category", "Integration")]
+public class IntegrationPlaceholderTests
 {
     [Fact]
-    public void Test1()
+    public void Placeholder_IntegrationTestsComingSoon()
     {
-
+        // Phase 1 integration tests added in Task 4.3
+        Assert.True(true);
     }
 }

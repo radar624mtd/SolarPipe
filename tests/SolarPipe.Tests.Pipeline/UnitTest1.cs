@@ -1,10 +1,12 @@
 namespace SolarPipe.Tests.Pipeline;
 
-public class UnitTest1
+[Trait("Category", "Pipeline")]
+public class PipelinePlaceholderTests
 {
     [Fact]
-    public void Test1()
+    public void Placeholder_PipelineTestsComingSoon()
     {
-
+        // Phase 1 end-to-end pipeline tests added in Task 4.3
+        Assert.True(true);
     }
 }
