@@ -374,7 +374,7 @@
   - Estimated: 8 hours
 
 #### Week 10-11: Validation & Cross-Validation
-- [ ] Task 9.1: Cross-validation implementations
+- [x] Task 9.1: Cross-validation implementations
   - LOOCV (leave-one-out)
   - Expanding-window temporal CV (gap buffer handling)
   - K-fold CV
