@@ -408,13 +408,13 @@
 ### Phase 4 Detailed Tasks
 
 #### Week 13: gRPC Sidecar & Python
-- [ ] Task 11.1: gRPC proto definition
+- [x] Task 11.1: gRPC proto definition
   - PythonTrainer service (Train, Predict, ExportOnnx)
   - Message types (TrainRequest, TrainResponse, etc.)
   - Arrow IPC serialization
   - Estimated: 4 hours
 
-- [ ] Task 11.2: Python sidecar server
+- [x] Task 11.2: Python sidecar server
   - Flask/FastAPI with gRPC
   - Health checks and restart logic
   - Error handling and logging

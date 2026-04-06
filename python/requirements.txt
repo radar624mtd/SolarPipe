@@ -1,0 +1,10 @@
+# SolarPipe Python sidecar dependencies
+# Install into workspace-relative venv:
+#   python -m venv python/.venv
+#   ${SOLARPIPE_ROOT}/python/.venv/bin/python -m pip install -r python/requirements.txt
+
+grpcio==1.67.1
+grpcio-tools==1.67.1
+grpcio-health-checking==1.67.1
+pyarrow==17.0.0
+torch==2.5.1
