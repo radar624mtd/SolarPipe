@@ -2,7 +2,7 @@
 
 **Project**: ML Orchestration Framework for Space Weather Forecasting
 **Status**: 🟢 In Progress — Phase 4
-**Last Updated**: 2026-04-06 (Phase 3 complete — ParquetProvider, MockDataStrategy, ExpandingWindowCV, EnbPI, SplitConformal, FeatureImportanceAnalyzer, flux_rope config; 239 tests passing)
+**Last Updated**: 2026-04-06 (Phase 4 Task 11.3 complete — TFT trainer unit tests; 254 tests passing: 214 unit, 37 integration, 3 pipeline)
 **Target Completion**: Q3 2026 (19 weeks from start — extended from 16 with 25% per-phase buffer)
 
 ---
@@ -14,8 +14,8 @@
 | **Architecture** | ✅ Complete | Documented in SolarPipe_Architecture_Plan.docx |
 | **CLAUDE.md** | ✅ Complete | Development guide created |
 | **Automation Setup** | ✅ Complete | 2 skills, 2 agents, 3 hooks configured |
-| **Implementation** | 🟢 In Progress | Phase 3 complete (239 tests); Phase 4 next |
-| **Overall Progress** | 72% | 29 of ~40 implementation tasks done; 239 tests passing (209 unit, 27 integration, 3 pipeline) |
+| **Implementation** | 🟢 In Progress | Phase 4 Task 11.3 complete (254 tests); next: Task 12.1 OnnxAdapter |
+| **Overall Progress** | 75% | 30 of ~40 implementation tasks done; 254 tests passing (214 unit, 37 integration, 3 pipeline) |
 
 ---
 
@@ -422,7 +422,7 @@
   - Tests: 4 test cases
   - Estimated: 8 hours
 
-- [ ] Task 11.3: TFT trainer implementation
+- [x] Task 11.3: TFT trainer implementation
   - PyTorch Time Series Transformer setup
   - Training loop (epochs, validation)
   - Model serialization
