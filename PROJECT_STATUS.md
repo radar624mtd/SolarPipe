@@ -155,7 +155,7 @@
 ### Phase 1 Detailed Tasks
 
 #### Week 1: Project Setup, Core Interfaces & CLI-Agent Infrastructure
-- [ ] Task 1.1: Create .NET 8 solution with 6 projects + build infrastructure
+- [x] Task 1.1: Create .NET 8 solution with 6 projects + build infrastructure
   - Create SolarPipe.sln with all projects (Core, Config, Data, Training, Prediction, Host)
   - Configure project references (unidirectional DAG)
   - Create `Directory.Packages.props` for Central Package Management (RULE-112)
@@ -164,7 +164,7 @@
   - Configure Serilog structured JSON logging to `logs/dotnet_latest.json` (ADR-010)
   - Estimated: 5 hours
 
-- [ ] Task 1.2: Implement Core interfaces + domain-driven types
+- [x] Task 1.2: Implement Core interfaces + domain-driven types
   - IDataFrame (GetColumn, Slice, SelectColumns, AddColumn, ResampleAndAlign, ToDataView, ToArray)
   - IDataSourceProvider (DiscoverSchemaAsync, LoadAsync)
   - IFrameworkAdapter (TrainAsync)
@@ -177,14 +177,14 @@
   - SpaceWeatherTimeParser.cs (RULE-133)
   - Estimated: 10 hours
 
-- [ ] Task 1.3: Test infrastructure
+- [x] Task 1.3: Test infrastructure
   - PhysicsTestFixtures.cs with validated parameter sets (NEVER use random floats)
   - Configure FluentAssertions + NSubstitute
   - `[Trait("Category", "Unit")]` segmentation
   - test fixtures directory with sample_config.yaml, test.csv, test.db
   - Estimated: 3 hours
 
-- [ ] Task 1.4: Implement InMemoryDataFrame
+- [x] Task 1.4: Implement InMemoryDataFrame
   - float[][] backing storage
   - Column access (by name and index)
   - Slicing and column selection
