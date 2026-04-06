@@ -1,0 +1,84 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(dotnet build*)",
+      "Bash(dotnet test*)",
+      "Bash(dotnet run*)",
+      "Bash(dotnet format*)",
+      "Bash(dotnet sln*)",
+      "Bash(dotnet new*)",
+      "Bash(dotnet add*)",
+      "Bash(dotnet restore*)",
+      "Bash(dotnet --list-sdks)",
+      "Bash(git *)",
+      "Edit(src/**/*.cs)",
+      "Edit(tests/**/*.cs)",
+      "Edit(configs/**/*.yaml)",
+      "Read",
+      "Glob",
+      "Grep"
+    ],
+    "deny": [
+      "Bash(rm -rf*)",
+      "Bash(git push*)",
+      "Bash(git reset --hard*)",
+      "Edit(*.db)",
+      "Edit(*.proto)",
+      "Edit(models/registry/**)"
+    ]
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "tool": "Edit",
+        "glob": "src/**/*.cs",
+        "action": "run-formatter",
+        "description": "Auto-format C# files after edits"
+      }
+    ],
+    "PreToolUse": [
+      {
+        "tool": "Edit",
+        "glob": ["*.db", "*.proto", "models/registry/**"],
+        "action": "require-confirmation",
+        "message": "⚠️ This is a sensitive file. Confirm before editing."
+      },
+      {
+        "tool": "Bash",
+        "pattern": "git push",
+        "action": "require-confirmation",
+        "message": "⚠️ About to push to remote. Confirm before proceeding."
+      }
+    ]
+  },
+  "automations": {
+    "run-formatter": {
+      "type": "bash",
+      "command": "dotnet build --no-restore -v quiet 2>&1 | tail -3",
+      "allowFailure": true,
+      "description": "Verify build still passes after edit (dotnet format runs only on pre-commit)"
+    }
+  },
+  "agents": {
+    "architecture-reviewer": {
+      "enabled": true,
+      "description": "Review new adapter implementations for architectural consistency"
+    },
+    "physics-validator": {
+      "enabled": true,
+      "description": "Validate physics equation implementations"
+    }
+  },
+  "skills": {
+    "dotnet-cli": {
+      "enabled": true,
+      "context": "default",
+      "invocation": "user-only"
+    },
+    "pipeline-config-validator": {
+      "enabled": true,
+      "context": "default",
+      "invocation": "both"
+    }
+  }
+}

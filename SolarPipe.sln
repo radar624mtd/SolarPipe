@@ -1,0 +1,85 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{5A74AD7B-1C66-43BC-B062-7C4C3B79D753}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SolarPipe.Core", "src\SolarPipe.Core\SolarPipe.Core.csproj", "{09E42F1A-44BF-4357-99A3-99861149A1AA}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SolarPipe.Config", "src\SolarPipe.Config\SolarPipe.Config.csproj", "{4851EF1B-780F-472D-ABD5-1EDB471DE1F1}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SolarPipe.Data", "src\SolarPipe.Data\SolarPipe.Data.csproj", "{8C8D6E10-F840-4BC5-82F7-A4BA70E6887D}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SolarPipe.Training", "src\SolarPipe.Training\SolarPipe.Training.csproj", "{F79911CF-2E8F-4F63-A83B-3503E7DBF806}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SolarPipe.Prediction", "src\SolarPipe.Prediction\SolarPipe.Prediction.csproj", "{9F727A0D-4976-4F10-BC16-33790573897B}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SolarPipe.Host", "src\SolarPipe.Host\SolarPipe.Host.csproj", "{9441A30C-D8E8-43C6-8A2E-7B61ABCD1731}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{6EE4E20B-F377-43D7-8EA7-2E19700CEB54}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SolarPipe.Tests.Unit", "tests\SolarPipe.Tests.Unit\SolarPipe.Tests.Unit.csproj", "{2D302C77-F0F7-4E8B-8E4E-83C5897312A1}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SolarPipe.Tests.Integration", "tests\SolarPipe.Tests.Integration\SolarPipe.Tests.Integration.csproj", "{17B458E3-85C9-4F47-B616-63A666A03D70}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SolarPipe.Tests.Pipeline", "tests\SolarPipe.Tests.Pipeline\SolarPipe.Tests.Pipeline.csproj", "{7593A189-EFAA-4003-9642-008F70E273DA}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{09E42F1A-44BF-4357-99A3-99861149A1AA}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{09E42F1A-44BF-4357-99A3-99861149A1AA}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{09E42F1A-44BF-4357-99A3-99861149A1AA}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{09E42F1A-44BF-4357-99A3-99861149A1AA}.Release|Any CPU.Build.0 = Release|Any CPU
+		{4851EF1B-780F-472D-ABD5-1EDB471DE1F1}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{4851EF1B-780F-472D-ABD5-1EDB471DE1F1}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{4851EF1B-780F-472D-ABD5-1EDB471DE1F1}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{4851EF1B-780F-472D-ABD5-1EDB471DE1F1}.Release|Any CPU.Build.0 = Release|Any CPU
+		{8C8D6E10-F840-4BC5-82F7-A4BA70E6887D}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{8C8D6E10-F840-4BC5-82F7-A4BA70E6887D}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{8C8D6E10-F840-4BC5-82F7-A4BA70E6887D}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{8C8D6E10-F840-4BC5-82F7-A4BA70E6887D}.Release|Any CPU.Build.0 = Release|Any CPU
+		{F79911CF-2E8F-4F63-A83B-3503E7DBF806}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{F79911CF-2E8F-4F63-A83B-3503E7DBF806}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{F79911CF-2E8F-4F63-A83B-3503E7DBF806}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{F79911CF-2E8F-4F63-A83B-3503E7DBF806}.Release|Any CPU.Build.0 = Release|Any CPU
+		{9F727A0D-4976-4F10-BC16-33790573897B}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{9F727A0D-4976-4F10-BC16-33790573897B}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{9F727A0D-4976-4F10-BC16-33790573897B}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{9F727A0D-4976-4F10-BC16-33790573897B}.Release|Any CPU.Build.0 = Release|Any CPU
+		{9441A30C-D8E8-43C6-8A2E-7B61ABCD1731}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{9441A30C-D8E8-43C6-8A2E-7B61ABCD1731}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{9441A30C-D8E8-43C6-8A2E-7B61ABCD1731}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{9441A30C-D8E8-43C6-8A2E-7B61ABCD1731}.Release|Any CPU.Build.0 = Release|Any CPU
+		{2D302C77-F0F7-4E8B-8E4E-83C5897312A1}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{2D302C77-F0F7-4E8B-8E4E-83C5897312A1}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{2D302C77-F0F7-4E8B-8E4E-83C5897312A1}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{2D302C77-F0F7-4E8B-8E4E-83C5897312A1}.Release|Any CPU.Build.0 = Release|Any CPU
+		{17B458E3-85C9-4F47-B616-63A666A03D70}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{17B458E3-85C9-4F47-B616-63A666A03D70}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{17B458E3-85C9-4F47-B616-63A666A03D70}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{17B458E3-85C9-4F47-B616-63A666A03D70}.Release|Any CPU.Build.0 = Release|Any CPU
+		{7593A189-EFAA-4003-9642-008F70E273DA}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{7593A189-EFAA-4003-9642-008F70E273DA}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{7593A189-EFAA-4003-9642-008F70E273DA}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{7593A189-EFAA-4003-9642-008F70E273DA}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{09E42F1A-44BF-4357-99A3-99861149A1AA} = {5A74AD7B-1C66-43BC-B062-7C4C3B79D753}
+		{4851EF1B-780F-472D-ABD5-1EDB471DE1F1} = {5A74AD7B-1C66-43BC-B062-7C4C3B79D753}
+		{8C8D6E10-F840-4BC5-82F7-A4BA70E6887D} = {5A74AD7B-1C66-43BC-B062-7C4C3B79D753}
+		{F79911CF-2E8F-4F63-A83B-3503E7DBF806} = {5A74AD7B-1C66-43BC-B062-7C4C3B79D753}
+		{9F727A0D-4976-4F10-BC16-33790573897B} = {5A74AD7B-1C66-43BC-B062-7C4C3B79D753}
+		{9441A30C-D8E8-43C6-8A2E-7B61ABCD1731} = {5A74AD7B-1C66-43BC-B062-7C4C3B79D753}
+		{2D302C77-F0F7-4E8B-8E4E-83C5897312A1} = {6EE4E20B-F377-43D7-8EA7-2E19700CEB54}
+		{17B458E3-85C9-4F47-B616-63A666A03D70} = {6EE4E20B-F377-43D7-8EA7-2E19700CEB54}
+		{7593A189-EFAA-4003-9642-008F70E273DA} = {6EE4E20B-F377-43D7-8EA7-2E19700CEB54}
+	EndGlobalSection
+EndGlobal

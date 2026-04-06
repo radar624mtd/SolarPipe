@@ -1,0 +1,18 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\SolarPipe.Config\SolarPipe.Config.csproj" />
+    <ProjectReference Include="..\SolarPipe.Data\SolarPipe.Data.csproj" />
+    <ProjectReference Include="..\SolarPipe.Training\SolarPipe.Training.csproj" />
+    <ProjectReference Include="..\SolarPipe.Prediction\SolarPipe.Prediction.csproj" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+  </PropertyGroup>
+
+</Project>
