@@ -381,7 +381,7 @@
   - Tests: 8 test cases
   - Estimated: 8 hours
 
-- [ ] Task 9.2: Uncertainty quantification & feature importance
+- [x] Task 9.2: Uncertainty quantification & feature importance
   - Tree variance extraction (RF predictions per tree)
   - Uncertainty propagation through compositions
   - Feature importance from tree-based models
