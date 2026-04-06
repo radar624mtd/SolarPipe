@@ -2,7 +2,7 @@
 
 **Project**: ML Orchestration Framework for Space Weather Forecasting
 **Status**: 🟢 In Progress — Phase 1
-**Last Updated**: 2026-04-06 (Task 4.3 complete — Phase 1 done)
+**Last Updated**: 2026-04-06 (Tasks 6.1–6.4, 7.1, 7.3 complete — Phase 2 composition + transforms done)
 **Target Completion**: Q3 2026 (19 weeks from start — extended from 16 with 25% per-phase buffer)
 
 ---
@@ -14,8 +14,8 @@
 | **Architecture** | ✅ Complete | Documented in SolarPipe_Architecture_Plan.docx |
 | **CLAUDE.md** | ✅ Complete | Development guide created |
 | **Automation Setup** | ✅ Complete | 2 skills, 2 agents, 3 hooks configured |
-| **Implementation** | 🟢 In Progress | Phase 2 — Tasks 5.1, 5.2, 5.3, 7.2 done |
-| **Overall Progress** | 37% | 14 of ~40 implementation tasks done; 120 tests passing (120 unit, 0 integration, 0 pipeline) |
+| **Implementation** | 🟢 In Progress | Phase 2 — Tasks 5.1–5.3, 6.1–6.4, 7.1–7.2 done; 7.3 integration tests complete |
+| **Overall Progress** | 55% | 21 of ~40 implementation tasks done; 164 tests passing (153 unit, 8 integration, 3 pipeline) |
 
 ---
 
@@ -52,23 +52,23 @@
 
 ---
 
-### Phase 2: Physics & Composition (Weeks 6–9) — 🟡 Pending
+### Phase 2: Physics & Composition (Weeks 6–9) — 🟢 In Progress (composition + transforms complete)
 **Goal**: Physics models, composition algebra, and early gRPC validation
 
 **Deliverables**:
-- [ ] PhysicsAdapter with DragBasedModel implementation (accepts `RadialSpeed`, not bare float)
-- [ ] DragBasedModel: **Dormand-Prince RK4(5)** adaptive ODE solver (~200 lines, NOT MathNet RK4)
-- [ ] NaN propagation guard after every ODE step (RULE-121)
-- [ ] ComposeExpressionParser completion: all operators (chain, ensemble, residual, gate)
-- [ ] ChainedModel, ResidualModel, EnsembleModel, GatedModel implementations
-- [ ] EnsembleModel uses `TaskCreationOptions.LongRunning` for parallel training (ADR-014)
+- [x] PhysicsAdapter with DragBasedModel implementation (accepts `RadialSpeed`, not bare float)
+- [x] DragBasedModel: **Dormand-Prince RK4(5)** adaptive ODE solver (~200 lines, NOT MathNet RK4)
+- [x] NaN propagation guard after every ODE step (RULE-121)
+- [x] ComposeExpressionParser completion: all operators (chain, ensemble, residual, gate)
+- [x] ChainedModel, ResidualModel, EnsembleModel, GatedModel implementations
+- [x] EnsembleModel uses `TaskCreationOptions.LongRunning` for parallel training (ADR-014)
 - [ ] **gRPC sidecar stub** (Week 6): proto schema, deterministic mock service, Arrow IPC validation (ADR-011)
 - [ ] Composition algebra tested against both ML.NET (in-process) and gRPC stub (out-of-process)
-- [ ] Data transforms: normalize, standardize, log_scale, lag, window_stats
+- [x] Data transforms: normalize, standardize, log_scale, lag, window_stats
 - [ ] `IDataFrame.ResampleAndAlign()` temporal alignment primitive (RULE-122)
-- [ ] Coupling functions: Newell, VBs, Borovsky
+- [x] Coupling functions: Newell, VBs, Borovsky
 - [ ] Coordinate transform utility: Hapgood 1992 GSE↔GSM with `GseVector`/`GsmVector` types
-- [ ] Integration tests for composition algebra
+- [x] Integration tests for composition algebra
 
 **Success Criteria**: Two-stage pipeline (`physics_baseline ^ rf_correction`) trains and predicts correctly. gRPC stub validates serialization round-trip. `GseVector` → `GsmVector` transform matches published test vectors.
 
@@ -279,14 +279,14 @@
   - Estimated: 4 hours
 
 #### Week 6-7: Composition Models
-- [ ] Task 6.1: ChainedModel implementation
+- [x] Task 6.1: ChainedModel implementation
   - Sequential model chaining
   - Column name mapping (output columns → input columns)
   - Error handling for mismatched shapes
   - Tests: 4 test cases
   - Estimated: 4 hours
 
-- [ ] Task 6.2: ResidualModel implementation
+- [x] Task 6.2: ResidualModel implementation
   - Baseline prediction
   - Feature augmentation (add baseline prediction as feature)
   - Residual prediction (observed - baseline)
@@ -295,14 +295,14 @@
   - Tests: 6 test cases
   - Estimated: 6 hours
 
-- [ ] Task 6.3: EnsembleModel implementation
+- [x] Task 6.3: EnsembleModel implementation
   - Weighted averaging
   - Weight normalization
   - Output shape compatibility
   - Tests: 4 test cases
   - Estimated: 4 hours
 
-- [ ] Task 6.4: GatedModel implementation
+- [x] Task 6.4: GatedModel implementation
   - Routing based on classifier output
   - Soft gating (weighted combination)
   - Uncertainty from routing entropy
@@ -310,11 +310,11 @@
   - Estimated: 4 hours
 
 #### Week 7-8: Data Transforms & Integration
-- [ ] Task 7.1: TransformEngine & transforms
+- [x] Task 7.1: TransformEngine & transforms
   - Normalize, standardize, log_scale, lag, window_stats
   - Coupling functions (Newell, VBs, Borovsky)
   - Transform chaining
-  - Tests: 10 test cases
+  - Tests: 16 test cases
   - Estimated: 8 hours
 
 - [x] Task 7.2: Dormand-Prince RK4(5) ODE solver implementation (~200 lines C#)
@@ -324,9 +324,11 @@
   - Scalar + vector overloads; both tested
   - Estimated: 6 hours
 
-- [ ] Task 7.3: Phase 2 integration tests
-  - Physics baseline + ML correction pipeline
-  - Residual composition correctness verification
+- [x] Task 7.3: Phase 2 integration tests
+  - Physics baseline + ML correction pipeline (ResidualModel)
+  - EnsembleModel with two physics configurations
+  - ChainedModel physics→RF end-to-end
+  - 4 integration test cases
   - Estimated: 6 hours
 
 ---
