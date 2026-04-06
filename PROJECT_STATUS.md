@@ -1,8 +1,8 @@
 # SolarPipe Project Status Tracker
 
 **Project**: ML Orchestration Framework for Space Weather Forecasting
-**Status**: 🟢 In Progress — Phase 3
-**Last Updated**: 2026-04-06 (Phase 2 complete — gRPC stub, ResampleAndAlign, Hapgood GSE↔GSM; 198 tests passing)
+**Status**: 🟢 In Progress — Phase 4
+**Last Updated**: 2026-04-06 (Phase 3 complete — ParquetProvider, MockDataStrategy, ExpandingWindowCV, EnbPI, SplitConformal, FeatureImportanceAnalyzer, flux_rope config; 239 tests passing)
 **Target Completion**: Q3 2026 (19 weeks from start — extended from 16 with 25% per-phase buffer)
 
 ---
@@ -14,8 +14,8 @@
 | **Architecture** | ✅ Complete | Documented in SolarPipe_Architecture_Plan.docx |
 | **CLAUDE.md** | ✅ Complete | Development guide created |
 | **Automation Setup** | ✅ Complete | 2 skills, 2 agents, 3 hooks configured |
-| **Implementation** | 🟢 In Progress | Phase 2 complete (198 tests); Phase 3 next |
-| **Overall Progress** | 55% | 21 of ~40 implementation tasks done; 164 tests passing (153 unit, 8 integration, 3 pipeline) |
+| **Implementation** | 🟢 In Progress | Phase 3 complete (239 tests); Phase 4 next |
+| **Overall Progress** | 72% | 29 of ~40 implementation tasks done; 239 tests passing (209 unit, 27 integration, 3 pipeline) |
 
 ---
 
@@ -83,24 +83,24 @@
 
 ---
 
-### Phase 3: Mock Data & Validation (Weeks 10–14) — 🟡 Pending
+### Phase 3: Mock Data & Validation (Weeks 10–14) — ✅ Complete
 **Goal**: Synthetic data integration, rigorous validation, and pipeline resilience
 
 **Deliverables**:
-- [ ] ParquetProvider using **ParquetSharp** (NOT Parquet.Net) with safe disposal patterns (ADR-005)
-- [ ] MockDataStrategy framework: pretrain_then_finetune, mixed_training, residual_calibration
-- [ ] ResidualCalibrator: trains correction model on (obs - synthetic) residuals
-- [ ] **ENLIL temporal isolation** enforcement (RULE-053)
-- [ ] Expanding-window temporal cross-validation with gap buffers (3-7 days) (ADR-008)
-- [ ] Purged cross-validation (de Prado 2018) for overlapping events
-- [ ] Solar-cycle-aware splits (SC24 + SC25 in each fold)
-- [ ] **EnbPI** adaptive conformal prediction for time-series UQ (~150 lines) (ADR-012)
-- [ ] Standard split conformal prediction as fallback for non-temporal use cases
+- [x] ParquetProvider using **ParquetSharp** (NOT Parquet.Net) with safe disposal patterns (ADR-005)
+- [x] MockDataStrategy framework: pretrain_then_finetune, mixed_training, residual_calibration
+- [x] ResidualCalibrator: trains correction model on (obs - synthetic) residuals
+- [x] **ENLIL temporal isolation** enforcement (RULE-053)
+- [x] Expanding-window temporal cross-validation with gap buffers (3-7 days) (ADR-008)
+- [x] Purged cross-validation (de Prado 2018) for overlapping events
+- [x] Solar-cycle-aware splits (SC24 + SC25 in each fold)
+- [x] **EnbPI** adaptive conformal prediction for time-series UQ (~150 lines) (ADR-012)
+- [x] Standard split conformal prediction as fallback for non-temporal use cases
 - [ ] **Pipeline state checkpointing** with `--resume-from-stage` (ADR-015)
-- [ ] Data invariant tests: sentinel value rejection, NaN propagation, out-of-bounds detection
-- [ ] Feature importance extraction and analysis
-- [ ] Complete flux_rope_propagation_v1 pipeline configuration
-- [ ] Integration tests with synthetic + real data
+- [x] Data invariant tests: sentinel value rejection, NaN propagation, out-of-bounds detection
+- [x] Feature importance extraction and analysis
+- [x] Complete flux_rope_propagation_v1 pipeline configuration
+- [x] Integration tests with synthetic + real data
 
 **Success Criteria**: Full flux_rope_propagation_v1 pipeline runs with temporal CV. Pipeline crash at Stage 4 resumes from checkpoint without re-running Stages 1-3. EnbPI intervals adapt across solar cycle phases.
 
@@ -390,14 +390,14 @@
   - Estimated: 8 hours
 
 #### Week 11-12: Configuration & Integration
-- [ ] Task 10.1: flux_rope_propagation_v1 configuration
+- [x] Task 10.1: flux_rope_propagation_v1 configuration
   - Complete YAML configuration file
   - Data sources (SQLite CME catalog, Parquet ENLIL ensemble)
   - Two-stage pipeline (drag baseline, RF correction)
   - Mock data integration (residual calibration)
   - Estimated: 4 hours
 
-- [ ] Task 10.2: Phase 3 integration tests
+- [x] Task 10.2: Phase 3 integration tests
   - Full pipeline with mock + real data
   - LOOCV validation
   - Metrics collection and reporting

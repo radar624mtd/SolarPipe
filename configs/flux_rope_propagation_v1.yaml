@@ -1,0 +1,71 @@
+# flux_rope_propagation_v1
+#
+# Two-stage CME transit time pipeline:
+#   Stage 1: DragBased physics baseline — Dormand-Prince ODE, GSM-frame Bz (RULE-030, RULE-031)
+#   Stage 2: FastForest residual correction — trained on (observed - physics) residuals
+#
+# Mock data strategy: residual_calibration (RULE-053)
+#   ENLIL synthetic data is used ONLY for events strictly before the test period.
+#
+# Evaluation: expanding-window temporal CV, 5 folds, 5-day gap buffer (RULE-051)
+
+name: flux_rope_propagation_v1
+
+data_sources:
+  cme_catalog:
+    provider: sqlite
+    connection_string: data/cme_catalog.db
+    options:
+      table: cme_events
+      # sentinel values (9999.9, -1e31) converted to NaN at load time (RULE-120)
+
+  enlil_ensemble:
+    provider: parquet
+    connection_string: data/enlil_ensemble.parquet
+    # Row groups ≤64 MB; safe disposal via using (RULE-050, ADR-005)
+
+stages:
+  drag_baseline:
+    framework: Physics
+    model_type: DragBased
+    data_source: cme_catalog
+    features:
+      - radial_speed_km_s
+    target: transit_hours_observed
+    hyperparameters:
+      # Drag parameter γ (cm^-1) — O'Brien & McPherron 2000 central value
+      drag_parameter: 0.2e-7
+      # Background solar wind speed (km/s)
+      background_speed_km_s: 400.0
+      # Integration start/stop radii (solar radii)
+      r_start_rs: 21.5
+      r_stop_rs: 215.0
+
+  rf_correction:
+    framework: MlNet
+    model_type: FastForest
+    data_source: cme_catalog
+    features:
+      - radial_speed_km_s
+      - bz_gsm_nt
+      - solar_wind_density_n_cc
+      - drag_baseline_residual_hours
+    target: transit_hours_observed
+    mock_data_strategy: residual_calibration
+    hyperparameters:
+      number_of_trees: 100
+      number_of_leaves: 20
+      # RULE-010: FeatureFraction must be set explicitly (never rely on default)
+      feature_fraction: 0.7
+      minimum_example_count_per_leaf: 5
+      learning_rate: 0.2
+
+compose: drag_baseline ^ rf_correction
+
+evaluation:
+  strategy: expanding_window
+  gap_days: 5
+
+output:
+  format: json
+  path: output/flux_rope_propagation_v1_predictions.json

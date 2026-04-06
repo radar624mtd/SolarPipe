@@ -62,11 +62,14 @@ internal sealed class DataFrameDataView : IDataView
         var builder = new DataViewSchema.Builder();
         foreach (var col in schema.Columns)
         {
+            // DateTime columns store Unix seconds as float[] — map to Single so ML.NET
+            // can read them without triggering ReadOnlyMemory<char> getter errors.
             var dvType = col.Type switch
             {
-                ColumnType.Float => NumberDataViewType.Single,
-                ColumnType.Int => NumberDataViewType.Int32,
-                _ => (DataViewType)TextDataViewType.Instance
+                ColumnType.Float    => NumberDataViewType.Single,
+                ColumnType.Int      => NumberDataViewType.Int32,
+                ColumnType.DateTime => NumberDataViewType.Single,
+                _                   => (DataViewType)TextDataViewType.Instance
             };
             builder.AddColumn(col.Name, dvType);
         }
