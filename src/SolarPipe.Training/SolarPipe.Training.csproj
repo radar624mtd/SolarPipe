@@ -4,6 +4,17 @@
     <PackageReference Include="Microsoft.ML" />
     <PackageReference Include="Microsoft.ML.FastTree" />
     <PackageReference Include="Microsoft.Extensions.ML" />
+    <PackageReference Include="Grpc.Net.Client" />
+    <PackageReference Include="Google.Protobuf" />
+    <PackageReference Include="Grpc.Tools">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+    <PackageReference Include="Apache.Arrow" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Protobuf Include="..\..\python\solarpipe.proto" GrpcServices="Client" />
   </ItemGroup>
 
   <ItemGroup>

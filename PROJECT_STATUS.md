@@ -2,7 +2,7 @@
 
 **Project**: ML Orchestration Framework for Space Weather Forecasting
 **Status**: 🟢 In Progress — Phase 1
-**Last Updated**: 2026-04-06 (Tasks 6.1–6.4, 7.1, 7.3 complete — Phase 2 composition + transforms done)
+**Last Updated**: 2026-04-06 (Phase 2 complete — gRPC stub, ResampleAndAlign, Hapgood GSE↔GSM; 198 tests passing)
 **Target Completion**: Q3 2026 (19 weeks from start — extended from 16 with 25% per-phase buffer)
 
 ---
@@ -14,7 +14,7 @@
 | **Architecture** | ✅ Complete | Documented in SolarPipe_Architecture_Plan.docx |
 | **CLAUDE.md** | ✅ Complete | Development guide created |
 | **Automation Setup** | ✅ Complete | 2 skills, 2 agents, 3 hooks configured |
-| **Implementation** | 🟢 In Progress | Phase 2 — Tasks 5.1–5.3, 6.1–6.4, 7.1–7.2 done; 7.3 integration tests complete |
+| **Implementation** | 🟢 In Progress | Phase 2 complete (198 tests); Phase 3 next |
 | **Overall Progress** | 55% | 21 of ~40 implementation tasks done; 164 tests passing (153 unit, 8 integration, 3 pipeline) |
 
 ---
@@ -52,7 +52,7 @@
 
 ---
 
-### Phase 2: Physics & Composition (Weeks 6–9) — 🟢 In Progress (composition + transforms complete)
+### Phase 2: Physics & Composition (Weeks 6–9) — ✅ Complete
 **Goal**: Physics models, composition algebra, and early gRPC validation
 
 **Deliverables**:
@@ -62,12 +62,12 @@
 - [x] ComposeExpressionParser completion: all operators (chain, ensemble, residual, gate)
 - [x] ChainedModel, ResidualModel, EnsembleModel, GatedModel implementations
 - [x] EnsembleModel uses `TaskCreationOptions.LongRunning` for parallel training (ADR-014)
-- [ ] **gRPC sidecar stub** (Week 6): proto schema, deterministic mock service, Arrow IPC validation (ADR-011)
-- [ ] Composition algebra tested against both ML.NET (in-process) and gRPC stub (out-of-process)
+- [x] **gRPC sidecar stub**: proto schema (`solarpipe.proto`), deterministic Python mock, Arrow IPC validation (ADR-011)
+- [x] Composition algebra tested against both ML.NET (in-process) and gRPC stub (out-of-process)
 - [x] Data transforms: normalize, standardize, log_scale, lag, window_stats
-- [ ] `IDataFrame.ResampleAndAlign()` temporal alignment primitive (RULE-122)
+- [x] `IDataFrame.ResampleAndAlign()` temporal alignment primitive — linear interpolation + forward-fill (RULE-122)
 - [x] Coupling functions: Newell, VBs, Borovsky
-- [ ] Coordinate transform utility: Hapgood 1992 GSE↔GSM with `GseVector`/`GsmVector` types
+- [x] Coordinate transform utility: Hapgood 1992 GSE↔GSM with `GseVector`/`GsmVector` types (RULE-031, RULE-130)
 - [x] Integration tests for composition algebra
 
 **Success Criteria**: Two-stage pipeline (`physics_baseline ^ rf_correction`) trains and predicts correctly. gRPC stub validates serialization round-trip. `GseVector` → `GsmVector` transform matches published test vectors.
@@ -329,6 +329,28 @@
   - EnsembleModel with two physics configurations
   - ChainedModel physics→RF end-to-end
   - 4 integration test cases
+  - Estimated: 6 hours
+
+- [x] Task 7.4: gRPC sidecar stub
+  - `solarpipe.proto`: PythonTrainer service (Train, StreamTrain, Predict, ExportOnnx)
+  - `solarpipe_stub.py`: deterministic Python mock (STUB_PREDICTION_HOURS=48.0), Arrow IPC float32 validation
+  - `GrpcSidecarAdapter`: IFrameworkAdapter for TFT/NeuralOde model types
+  - `ArrowIpcHelper`: public Arrow IPC write helper (float32 enforcement, NaN→null)
+  - 8 integration tests: adapter contract, Arrow IPC schema, composition algebra
+  - Estimated: 8 hours
+
+- [x] Task 7.5: IDataFrame.ResampleAndAlign()
+  - Linear interpolation for Float columns, forward-fill for Int columns
+  - Timestamp column detection: ColumnType.DateTime first, then name "timestamp" (case-insensitive)
+  - NaN propagation when neighbor is NaN (RULE-121)
+  - Sort tolerance: out-of-order timestamps sorted before interpolation
+  - 11 unit tests covering upsampling, downsampling, NaN, forward-fill, edge cases
+  - Estimated: 6 hours
+
+- [x] Task 7.6: Hapgood 1992 GSE↔GSM coordinate transform
+  - `CoordinateTransform`: GseToGsm, GsmToGse, DipoleTiltAngleRad (Hapgood Appendix B)
+  - IGRF-13 (2020) dipole: 80.65°N, 287.32°E; Julian Day (Meeus ch.7); θ_GST formula
+  - 15 unit tests: JD computation, |ψ|<35° bounds, annual/diurnal variation, round-trips, Bx invariance, magnitude conservation
   - Estimated: 6 hours
 
 ---

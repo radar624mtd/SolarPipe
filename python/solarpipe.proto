@@ -1,0 +1,82 @@
+syntax = "proto3";
+
+package solarpipe;
+
+option csharp_namespace = "SolarPipe.Grpc";
+
+// SolarPipe Python sidecar service.
+// All large arrays are passed via file-based Arrow IPC (RULE-125), not inline proto.
+// Training uses server-streaming RPCs to avoid deadline issues for long runs (ADR-011, RULE-061).
+service PythonTrainer {
+  // Unary: train a model. arrowIpcPath is a filesystem path to an Arrow IPC file.
+  // For long-running training, prefer StreamTrain.
+  rpc Train(TrainRequest) returns (TrainResponse);
+
+  // Server-streaming: emit progress events during training, then a final result.
+  rpc StreamTrain(TrainRequest) returns (stream TrainProgress);
+
+  // Unary: predict on new data. arrowIpcPath points to Arrow IPC feature file.
+  rpc Predict(PredictRequest) returns (PredictResponse);
+
+  // Export trained model dynamics network to ONNX (Neural ODE only). RULE-070.
+  rpc ExportOnnx(ExportOnnxRequest) returns (ExportOnnxResponse);
+}
+
+// Health checking follows grpc.health.v1.Health convention (Phase 4).
+
+// ─── Training ────────────────────────────────────────────────────────────────
+
+message TrainRequest {
+  string stage_name = 1;
+  string model_type = 2;               // "TFT", "NeuralOde"
+  string arrow_ipc_path = 3;           // absolute path; C# writes, Python reads (RULE-125)
+  repeated string feature_columns = 4;
+  string target_column = 5;
+  map<string, string> hyperparameters = 6;
+  string model_output_dir = 7;         // where Python writes model artifacts
+}
+
+message TrainProgress {
+  int32 epoch = 1;
+  float train_loss = 2;
+  float val_loss = 3;
+  bool is_final = 4;                   // true on last message (contains model_id)
+  string model_id = 5;                 // populated only when is_final = true
+  string error_message = 6;           // non-empty on failure
+}
+
+message TrainResponse {
+  string model_id = 1;
+  float final_train_loss = 2;
+  float final_val_loss = 3;
+  int32 epochs_completed = 4;
+  string error_message = 5;           // non-empty on failure
+}
+
+// ─── Prediction ──────────────────────────────────────────────────────────────
+
+message PredictRequest {
+  string model_id = 1;
+  string arrow_ipc_path = 2;           // absolute path to feature Arrow IPC file (RULE-125)
+  string output_arrow_ipc_path = 3;    // Python writes predictions here; C# reads back
+  repeated string feature_columns = 4;
+}
+
+message PredictResponse {
+  string output_arrow_ipc_path = 1;    // echoes request field on success
+  int32 row_count = 2;
+  string error_message = 3;           // non-empty on failure
+}
+
+// ─── ONNX Export ─────────────────────────────────────────────────────────────
+
+message ExportOnnxRequest {
+  string model_id = 1;
+  string onnx_output_path = 2;
+  int32 opset = 3;                     // default 21 per IMPLEMENTATION_PLAN
+}
+
+message ExportOnnxResponse {
+  string onnx_output_path = 1;
+  string error_message = 2;
+}

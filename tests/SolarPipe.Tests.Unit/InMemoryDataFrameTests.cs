@@ -156,10 +156,11 @@ public class InMemoryDataFrameTests
     }
 
     [Fact]
-    public void ResampleAndAlign_ThrowsNotSupportedInPhase1()
+    public void ResampleAndAlign_ThrowsWhenNoTimestampColumn()
     {
+        // Frame with no DateTime column and no 'timestamp'-named column.
         var df = Make2Col();
         var act = () => df.ResampleAndAlign(TimeSpan.FromHours(1));
-        act.Should().Throw<NotSupportedException>().WithMessage("*Phase 1*");
+        act.Should().Throw<InvalidOperationException>().WithMessage("*timestamp*");
     }
 }

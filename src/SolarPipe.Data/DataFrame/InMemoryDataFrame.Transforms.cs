@@ -60,14 +60,5 @@ public sealed partial class InMemoryDataFrame
         return new InMemoryDataFrame(new DataSchema(newCols), newData);
     }
 
-    public IDataFrame ResampleAndAlign(TimeSpan cadence)
-    {
-        // Requires a timestamp column. Locate it by checking for DateTimeKind columns or
-        // a column named "timestamp" (case-insensitive).
-        // Phase 2 full implementation. Phase 1: throw NotSupportedException with clear context.
-        throw new NotSupportedException(
-            $"ResampleAndAlign is not implemented in Phase 1. " +
-            $"Schema columns: [{string.Join(", ", _schema.Columns.Select(c => c.Name))}]. " +
-            $"Requested cadence: {cadence}. Implement in Phase 2 (Task IDataFrame.ResampleAndAlign).");
-    }
+    // ResampleAndAlign is implemented in InMemoryDataFrame.Resample.cs (RULE-114: file size).
 }
