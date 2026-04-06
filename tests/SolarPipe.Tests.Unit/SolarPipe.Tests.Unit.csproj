@@ -17,6 +17,8 @@
     <PackageReference Include="FluentAssertions" />
     <PackageReference Include="NSubstitute" />
     <PackageReference Include="Microsoft.Data.Sqlite" />
+    <PackageReference Include="Microsoft.ML" />
+    <PackageReference Include="Microsoft.ML.FastTree" />
   </ItemGroup>
 
   <ItemGroup>
@@ -27,6 +29,7 @@
     <ProjectReference Include="..\..\src\SolarPipe.Core\SolarPipe.Core.csproj" />
     <ProjectReference Include="..\..\src\SolarPipe.Config\SolarPipe.Config.csproj" />
     <ProjectReference Include="..\..\src\SolarPipe.Data\SolarPipe.Data.csproj" />
+    <ProjectReference Include="..\..\src\SolarPipe.Training\SolarPipe.Training.csproj" />
   </ItemGroup>
 
 </Project>
