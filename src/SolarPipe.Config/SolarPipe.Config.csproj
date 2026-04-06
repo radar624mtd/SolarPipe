@@ -1,6 +1,10 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
+    <PackageReference Include="YamlDotNet" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\SolarPipe.Core\SolarPipe.Core.csproj" />
   </ItemGroup>
 

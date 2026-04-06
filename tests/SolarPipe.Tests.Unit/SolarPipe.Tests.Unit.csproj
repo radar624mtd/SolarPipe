@@ -11,6 +11,7 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="YamlDotNet" />
     <PackageReference Include="xunit" />
     <PackageReference Include="xunit.runner.visualstudio" />
     <PackageReference Include="FluentAssertions" />
@@ -24,6 +25,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\SolarPipe.Core\SolarPipe.Core.csproj" />
+    <ProjectReference Include="..\..\src\SolarPipe.Config\SolarPipe.Config.csproj" />
     <ProjectReference Include="..\..\src\SolarPipe.Data\SolarPipe.Data.csproj" />
   </ItemGroup>
 

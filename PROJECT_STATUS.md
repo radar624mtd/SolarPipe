@@ -14,8 +14,8 @@
 | **Architecture** | ✅ Complete | Documented in SolarPipe_Architecture_Plan.docx |
 | **CLAUDE.md** | ✅ Complete | Development guide created |
 | **Automation Setup** | ✅ Complete | 2 skills, 2 agents, 3 hooks configured |
-| **Implementation** | 🟢 In Progress | Phase 1 Week 2 — Tasks 1.1–1.4, 2.1–2.2 complete |
-| **Overall Progress** | 15% | 6 of ~40 implementation tasks done; 44 unit tests passing |
+| **Implementation** | 🟢 In Progress | Phase 1 Week 3 — Tasks 1.1–1.4, 2.1–2.3 complete |
+| **Overall Progress** | 18% | 7 of ~40 implementation tasks done; 64 unit tests passing |
 
 ---
 
@@ -209,7 +209,7 @@
   - Tests: 6 test cases (multiple delimiters, missing values, type casting) + DataSourceRegistry
   - Estimated: 6 hours
 
-- [ ] Task 2.3: YAML configuration loader
+- [x] Task 2.3: YAML configuration loader
   - YamlDotNet integration
   - PipelineConfig deserialization
   - Reference validation (data sources, stages, features)
