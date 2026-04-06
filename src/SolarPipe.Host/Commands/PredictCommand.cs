@@ -24,9 +24,18 @@ public sealed class PredictCommand : ICommand
 
     public async Task<int> ExecuteAsync(string[] args, CancellationToken ct)
     {
-        var configPath = ArgParser.Require(args, "--config");
-        var inputPath = ArgParser.Require(args, "--input");
-        var outputPath = ArgParser.Require(args, "--output");
+        string configPath, inputPath, outputPath;
+        try
+        {
+            configPath = ArgParser.Require(args, "--config");
+            inputPath  = ArgParser.Require(args, "--input");
+            outputPath = ArgParser.Require(args, "--output");
+        }
+        catch (ArgumentException ex)
+        {
+            Console.Error.WriteLine($"PREDICT_ERROR type=MissingArguments message=\"{ex.Message}\"");
+            return ExitCodes.MissingArguments;
+        }
         var stageFilter = ArgParser.Get(args, "--stage");
 
         try

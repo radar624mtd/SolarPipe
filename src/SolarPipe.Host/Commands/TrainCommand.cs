@@ -26,7 +26,13 @@ public sealed class TrainCommand : ICommand
 
     public async Task<int> ExecuteAsync(string[] args, CancellationToken ct)
     {
-        var configPath = ArgParser.Require(args, "--config");
+        string configPath;
+        try { configPath = ArgParser.Require(args, "--config"); }
+        catch (ArgumentException ex)
+        {
+            Console.Error.WriteLine($"TRAIN_ERROR type=MissingArguments message=\"{ex.Message}\"");
+            return ExitCodes.MissingArguments;
+        }
         var stageFilter = ArgParser.Get(args, "--stage");
 
         try
@@ -54,11 +60,8 @@ public sealed class TrainCommand : ICommand
 
                 try
                 {
-                    model = await Task.Factory.StartNew(
-                        () => adapter.TrainAsync(stageConfig, train, validation, stageCts.Token).GetAwaiter().GetResult(),
-                        stageCts.Token,
-                        TaskCreationOptions.LongRunning,
-                        TaskScheduler.Default);
+                    // RULE-150: MlNetAdapter.TrainAsync dispatches LongRunning internally
+                    model = await adapter.TrainAsync(stageConfig, train, validation, stageCts.Token);
                 }
                 catch (OperationCanceledException) when (!ct.IsCancellationRequested)
                 {

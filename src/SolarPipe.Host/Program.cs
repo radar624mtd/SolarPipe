@@ -29,7 +29,7 @@ internal static class Program
             cts.Cancel();
         };
 
-        var services = BuildServices();
+        await using var services = BuildServices();
         return command switch
         {
             "validate" => await services.GetRequiredService<ValidateCommand>().ExecuteAsync(commandArgs, cts.Token),

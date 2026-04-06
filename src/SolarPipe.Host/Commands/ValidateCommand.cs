@@ -16,7 +16,13 @@ public sealed class ValidateCommand : ICommand
 
     public async Task<int> ExecuteAsync(string[] args, CancellationToken ct)
     {
-        var configPath = ArgParser.Require(args, "--config");
+        string configPath;
+        try { configPath = ArgParser.Require(args, "--config"); }
+        catch (ArgumentException ex)
+        {
+            Console.Error.WriteLine($"VALIDATE_ERROR type=MissingArguments message=\"{ex.Message}\"");
+            return ExitCodes.MissingArguments;
+        }
 
         try
         {

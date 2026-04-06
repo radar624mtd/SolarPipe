@@ -128,7 +128,6 @@ public sealed class CliCommandTests : IDisposable
         // 60 rows — enough for an 80/20 train split (48 train, 12 validation) with FastForest
         var sb = new System.Text.StringBuilder();
         sb.AppendLine("speed,density,bz_gsm,transit_hours");
-        var rng = new Random(42);
         for (int i = 0; i < 60; i++)
         {
             float speed = 400f + (i * 3f);        // 400–577 km/s
@@ -162,9 +161,9 @@ stages:
       - bz_gsm
     target: transit_hours
     hyperparameters:
-      NumberOfTrees: 20
-      NumberOfLeaves: 4
-      FeatureFraction: 0.7
+      number_of_trees: 20
+      number_of_leaves: 4
+      feature_fraction: 0.7
 ";
         File.WriteAllText(configPath, yaml);
     }

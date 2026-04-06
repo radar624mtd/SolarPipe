@@ -45,13 +45,7 @@ public sealed partial class InMemoryDataFrame : IDataFrame
         return _data[index];
     }
 
-    internal ReadOnlySpan<float> GetColumnSpan(string name)
-    {
-        int idx = _schema.IndexOf(name);
-        if (idx < 0)
-            throw new KeyNotFoundException($"Column '{name}' not found in schema.");
-        return _data[idx].AsSpan();
-    }
+    internal float[] GetColumnSpan(string name) => GetColumn(name);
 
     private void ValidateColumnLengths()
     {

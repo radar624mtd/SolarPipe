@@ -9,10 +9,7 @@ public sealed class MlNetAdapter : IFrameworkAdapter
 {
     public FrameworkType FrameworkType => FrameworkType.MlNet;
 
-    public IReadOnlyList<string> SupportedModels => new[]
-    {
-        "FastForest", "FastTree", "LightGbm", "Sdca", "OrdinaryLeastSquares"
-    };
+    public IReadOnlyList<string> SupportedModels => new[] { "FastForest", "FastTree" };
 
     public async Task<ITrainedModel> TrainAsync(
         StageConfig config,
@@ -95,8 +92,9 @@ public sealed class MlNetAdapter : IFrameworkAdapter
 
     internal static int GetHyperInt(StageConfig config, string key, int defaultValue)
     {
-        if (config.Hyperparameters == null || !config.Hyperparameters.TryGetValue(key, out var raw))
-            return defaultValue;
+        if (config.Hyperparameters == null) return defaultValue;
+        var raw = FindHyperValue(config.Hyperparameters, key);
+        if (raw == null) return defaultValue;
         return raw switch
         {
             int i => i,
@@ -106,10 +104,19 @@ public sealed class MlNetAdapter : IFrameworkAdapter
         };
     }
 
+    private static object? FindHyperValue(IReadOnlyDictionary<string, object> hypers, string key)
+    {
+        foreach (var kv in hypers)
+            if (string.Equals(kv.Key, key, StringComparison.OrdinalIgnoreCase))
+                return kv.Value;
+        return null;
+    }
+
     internal static float GetHyperFloat(StageConfig config, string key, float defaultValue)
     {
-        if (config.Hyperparameters == null || !config.Hyperparameters.TryGetValue(key, out var raw))
-            return defaultValue;
+        if (config.Hyperparameters == null) return defaultValue;
+        var raw = FindHyperValue(config.Hyperparameters, key);
+        if (raw == null) return defaultValue;
         return raw switch
         {
             float f => f,

@@ -151,6 +151,12 @@ These rules exist because there is no IDE. Violating them causes expensive debug
 8. **Separate log streams**: C# → `logs/dotnet_latest.json`, Python → `logs/python_latest.json`. Shared Trace ID. Never interleave to stdout.
 9. **Explicit Python path**: `${SOLARPIPE_ROOT}/python/.venv/bin/python` — never bare `python`.
 10. **Translate exit codes**: `137 → "Out of Memory"`, `139 → "Segmentation fault — check ParquetSharp native handles"`.
+11. **SupportedModels honesty**: Only list model types that have a working case in `SelectTrainer`/equivalent. Unimplemented entries cause silent `NotSupportedException` at runtime.
+12. **Hyperparameter key lookup**: Use `OrdinalIgnoreCase` when reading `IReadOnlyDictionary<string, object>` hyperparameter maps — YAML authors use both `snake_case` and `PascalCase`. Pattern: iterate kvp with `StringComparison.OrdinalIgnoreCase` via a `FindHyperValue` helper.
+13. **MissingArguments exit code**: Commands must catch `ArgumentException` from `ArgParser.Require` *before* the main `try` block and return `ExitCodes.MissingArguments`. The catch-all handler must not swallow it with a domain-specific failure code.
+14. **Dispose the ServiceProvider**: Use `await using var services = BuildServices()` when the DI container holds `IDisposable` singletons (e.g. `FileSystemModelRegistry`). Plain `var` silently skips `Dispose()`.
+15. **Integration test YAML keys**: Use `snake_case` hyperparameter keys in test YAML configs to match adapter convention. `PascalCase` keys silently fall through to defaults — the test passes but the configured values are never applied.
+16. **Delete placeholder tests**: Remove `UnitTest1.cs` / placeholder tests immediately when real tests exist in the same project. Keeping them inflates reported test counts.
 
 ## Critical Rules Quick Reference
 
@@ -159,6 +165,7 @@ Silent failures if violated — read full context in `DEVELOPMENT_RULES.md`:
 | Rule | Summary |
 |------|---------|
 | RULE-001 | No `ReadOnlySpan<T>` in interfaces — use `float[]` |
+| RULE-001 (ext) | Also applies to `internal` methods on concrete types accessible from dependent assemblies |
 | RULE-002 | Validate column lengths in `ToDataView()` |
 | RULE-010 | Set `FeatureFraction=0.7` explicitly in ML.NET FastForest |
 | RULE-020 | Register `Yaml12BooleanConverter` (YAML 1.1 Norway problem) |
@@ -170,6 +177,7 @@ Silent failures if violated — read full context in `DEVELOPMENT_RULES.md`:
 | RULE-111 | No XML doc comments (no IntelliSense in CLI workflow) |
 | RULE-120 | Convert sentinel values (9999.9, -1e31) to NaN at load time |
 | RULE-130 | Coordinate vectors use typed structs — no bare floats (GSE/GSM) |
+| RULE-150 (ext) | LongRunning lives in the adapter — commands must NOT add a second `Task.Factory.StartNew` wrapper |
 
 ## Project Documentation Index
 
