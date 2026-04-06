@@ -14,8 +14,8 @@
 | **Architecture** | ✅ Complete | Documented in SolarPipe_Architecture_Plan.docx |
 | **CLAUDE.md** | ✅ Complete | Development guide created |
 | **Automation Setup** | ✅ Complete | 2 skills, 2 agents, 3 hooks configured |
-| **Implementation** | 🟢 In Progress | Phase 1 complete — Tasks 1.1–4.3 all done |
-| **Overall Progress** | 27% | 10 of ~40 implementation tasks done; 82 tests passing (75 unit, 4 integration, 3 pipeline) |
+| **Implementation** | 🟢 In Progress | Phase 2 started — Task 5.1 done |
+| **Overall Progress** | 29% | 11 of ~40 implementation tasks done; 100 tests passing (93 unit, 4 integration, 3 pipeline) |
 
 ---
 
@@ -25,19 +25,19 @@
 **Goal**: Core framework skeleton with basic ML.NET model training + CLI-agent infrastructure
 
 **Deliverables**:
-- [ ] .NET 8 solution with all 6 projects + `Directory.Packages.props` (Central Package Management)
-- [ ] `TreatWarningsAsErrors` enabled in all `.csproj` files (clean terminal output)
-- [ ] Core interfaces: IDataFrame (with `AddColumn`, `ResampleAndAlign`), IDataSourceProvider, IFrameworkAdapter, ITrainedModel, IComposedModel, IModelRegistry
-- [ ] Domain-driven value types: `GseVector`, `GsmVector`, `SkyPlaneSpeed`, `RadialSpeed`, `PhysicalConstants`, `SpaceWeatherTimeParser`
-- [ ] InMemoryDataFrame (partial classes, `ArrayPool<float>` backing) with NaN-as-missing policy
-- [ ] SqliteProvider and CsvProvider with sentinel value conversion (9999.9 → NaN)
-- [ ] YAML configuration loader with `Yaml12BooleanConverter` + null validation
-- [ ] `validate` CLI command with DAG validation and AI-readable error messages
-- [ ] MlNetAdapter with FastForest (FeatureFraction=0.7, dual seed pinning, LongRunning tasks)
-- [ ] FileSystemModelRegistry with atomic writes (temp + File.Move)
-- [ ] CLI host with `train`, `predict`, `validate` commands + structured JSON logging
-- [ ] `PhysicsTestFixtures.cs` with validated parameter sets
-- [ ] Unit tests with FluentAssertions, NSubstitute, `[Trait("Category", "Unit")]` segmentation
+- [x] .NET 8 solution with all 6 projects + `Directory.Packages.props` (Central Package Management)
+- [x] `TreatWarningsAsErrors` enabled in all `.csproj` files (clean terminal output)
+- [x] Core interfaces: IDataFrame (with `AddColumn`, `ResampleAndAlign`), IDataSourceProvider, IFrameworkAdapter, ITrainedModel, IComposedModel, IModelRegistry
+- [x] Domain-driven value types: `GseVector`, `GsmVector`, `SkyPlaneSpeed`, `RadialSpeed`, `PhysicalConstants`, `SpaceWeatherTimeParser`
+- [x] InMemoryDataFrame (partial classes, `float[][]` backing) with NaN-as-missing policy
+- [x] SqliteProvider and CsvProvider with sentinel value conversion (9999.9 → NaN)
+- [x] YAML configuration loader with `Yaml12BooleanConverter` + null validation
+- [x] `validate` CLI command with DAG validation and AI-readable error messages
+- [x] MlNetAdapter with FastForest (FeatureFraction=0.7, dual seed pinning, LongRunning tasks)
+- [x] FileSystemModelRegistry with atomic writes (temp + File.Move)
+- [x] CLI host with `train`, `predict`, `validate` commands + structured JSON logging
+- [x] `PhysicsTestFixtures.cs` with validated parameter sets
+- [x] Unit tests with FluentAssertions, NSubstitute, `[Trait("Category", "Unit")]` segmentation
 
 **Success Criteria**: `solarpipe validate --config test.yaml` passes in <1s → `solarpipe train --config test.yaml` trains FastForest → atomic registry save → `solarpipe predict` generates output. Zero build warnings.
 
@@ -256,11 +256,11 @@
 ### Phase 2 Detailed Tasks
 
 #### Week 5-6: Physics & Composition Parsing
-- [ ] Task 5.1: ComposeExpressionParser
+- [x] Task 5.1: ComposeExpressionParser
   - Tokenizer (→, +, ^, ?, parentheses, identifiers)
   - Recursive descent parser (operator precedence)
   - AST representation
-  - Tests: 12 test cases (all operators, nested expressions, error cases)
+  - Tests: 18 test cases (all operators, nested expressions, precedence, error cases)
   - Estimated: 10 hours
 
 - [ ] Task 5.2: DragBasedModel physics implementation
