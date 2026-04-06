@@ -59,7 +59,7 @@ internal sealed class ResidualCalibrationStrategy : IMockDataStrategy
         // Step 4: train correction model on residuals
         // Use same features but target = residual
         var residualStage = stage with { Target = "__residual__" };
-        var residualData = observationalData.AddColumn("__residual__", residuals);
+        using var residualData = observationalData.AddColumn("__residual__", residuals);
 
         var correctionModel = await _adapter.TrainAsync(residualStage, residualData, null, ct);
 
@@ -89,8 +89,9 @@ internal sealed class ResidualCalibratorModel : ITrainedModel
         var baseResult = await _base.PredictAsync(input, ct);
         ct.ThrowIfCancellationRequested();
 
-        // Augment input with base prediction so correction model can use it
-        var augmented = input.AddColumn("__base_prediction__", baseResult.Values);
+        // Augment input with base prediction so correction model can use it.
+        // Dispose the augmented frame after use — it owns its column arrays.
+        using var augmented = input.AddColumn("__base_prediction__", baseResult.Values);
         var corrResult = await _correction.PredictAsync(augmented, ct);
 
         int n = baseResult.Values.Length;

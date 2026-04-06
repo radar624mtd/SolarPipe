@@ -73,6 +73,7 @@ public sealed class KFoldCV
 
             foldResults.Add(new CvFoldResult(k, trainIndices.Length, testIndices.Length, metrics));
 
+            (model as IDisposable)?.Dispose();
             trainFrame.Dispose();
             testFrame.Dispose();
         }

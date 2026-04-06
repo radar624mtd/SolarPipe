@@ -42,7 +42,7 @@ internal sealed class MixedTrainingStrategy : IMockDataStrategy
                 $"MixedTraining: observationalData is empty. Stage: '{stage.Name}'.",
                 nameof(observationalData));
 
-        var merged = MergeWithWeights(syntheticData, observationalData, _syntheticWeight, stage);
+        using var merged = MergeWithWeights(syntheticData, observationalData, _syntheticWeight, stage);
         return await _adapter.TrainAsync(stage, merged, null, ct);
     }
 

@@ -4,11 +4,14 @@ using SolarPipe.Core.Models;
 
 namespace SolarPipe.Training.Adapters;
 
-public sealed class MlNetTrainedModel : ITrainedModel
+// IDisposable: MLContext holds a native thread pool scheduler.
+// Dispose after use to release it promptly, especially in CV loops.
+public sealed class MlNetTrainedModel : ITrainedModel, IDisposable
 {
     private readonly ITransformer _model;
     private readonly MLContext _mlContext;
     private readonly StageConfig _config;
+    private bool _disposed;
 
     public string ModelId { get; }
     public string StageName => _config.Name;
@@ -72,5 +75,18 @@ public sealed class MlNetTrainedModel : ITrainedModel
         throw new NotSupportedException(
             $"LoadAsync is not supported on MlNetTrainedModel instances. " +
             $"Use FileSystemModelRegistry.LoadAsync to deserialize a saved model. Stage: '{StageName}'.");
+    }
+
+    public void Dispose()
+    {
+        if (_disposed) return;
+        _disposed = true;
+        // MLContext does not implement IDisposable itself, but its internal
+        // ComponentCatalog and native resources are GC'd once there are no
+        // more references. Setting _mlContext to null won't help here since
+        // fields are readonly; GC handles cleanup when this object is collected.
+        // The primary benefit is signalling intent and enabling deterministic
+        // cleanup at known points (CV folds, test teardown) via using statements.
+        GC.SuppressFinalize(this);
     }
 }

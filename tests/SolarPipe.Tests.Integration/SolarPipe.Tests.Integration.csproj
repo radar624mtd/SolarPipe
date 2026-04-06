@@ -35,4 +35,8 @@
     <ProjectReference Include="..\..\src\SolarPipe.Prediction\SolarPipe.Prediction.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <None Update="xunit.runner.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>

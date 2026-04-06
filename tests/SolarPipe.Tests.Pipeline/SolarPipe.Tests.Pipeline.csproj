@@ -28,4 +28,8 @@
     <ProjectReference Include="..\..\src\SolarPipe.Host\SolarPipe.Host.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <None Update="xunit.runner.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>
