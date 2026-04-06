@@ -168,8 +168,8 @@ Silent failures if violated — read full context in `DEVELOPMENT_RULES.md`:
 | RULE-051 | Temporal CV with gap buffers — never random k-fold |
 | RULE-070 | Neural ODE ONNX: export dynamics network only |
 | RULE-111 | No XML doc comments (no IntelliSense in CLI workflow) |
-| RULE-120 | `Task.Factory.StartNew(..., LongRunning)` for ML.NET training |
-| RULE-130 | Pipeline checkpointing: SHA-256 fingerprint per stage |
+| RULE-120 | Convert sentinel values (9999.9, -1e31) to NaN at load time |
+| RULE-130 | Coordinate vectors use typed structs — no bare floats (GSE/GSM) |
 
 ## Project Documentation Index
 

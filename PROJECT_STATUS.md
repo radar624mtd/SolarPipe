@@ -1,7 +1,7 @@
 # SolarPipe Project Status Tracker
 
 **Project**: ML Orchestration Framework for Space Weather Forecasting
-**Status**: 🟡 Pre-Implementation (Architecture & Planning Complete)
+**Status**: 🟢 In Progress — Phase 1
 **Last Updated**: 2026-04-06
 **Target Completion**: Q3 2026 (19 weeks from start — extended from 16 with 25% per-phase buffer)
 
@@ -14,8 +14,8 @@
 | **Architecture** | ✅ Complete | Documented in SolarPipe_Architecture_Plan.docx |
 | **CLAUDE.md** | ✅ Complete | Development guide created |
 | **Automation Setup** | ✅ Complete | 2 skills, 2 agents, 3 hooks configured |
-| **Implementation** | 🟡 Ready to Start | Phase 1 kickoff ready |
-| **Overall Progress** | 5% | Pre-implementation planning complete |
+| **Implementation** | 🟢 In Progress | Phase 1 Week 2 — Tasks 1.1–1.4, 2.1–2.2 complete |
+| **Overall Progress** | 15% | 6 of ~40 implementation tasks done; 44 unit tests passing |
 
 ---
 
@@ -193,7 +193,7 @@
   - Estimated: 6 hours
 
 #### Week 2: Data & Configuration
-- [ ] Task 2.1: SqliteProvider implementation
+- [x] Task 2.1: SqliteProvider implementation
   - Connection management (Microsoft.Data.Sqlite)
   - Schema discovery (PRAGMA table_info)
   - Parameterized query execution
@@ -201,12 +201,12 @@
   - Tests: 8 test cases (multiple tables, nullable columns, query filters)
   - Estimated: 8 hours
 
-- [ ] Task 2.2: CsvProvider implementation
+- [x] Task 2.2: CsvProvider implementation
   - CsvHelper integration
   - Header detection and column mapping
   - Delimiter support (comma, tab, semicolon)
   - Type inference for columns
-  - Tests: 6 test cases (multiple delimiters, missing values, type casting)
+  - Tests: 6 test cases (multiple delimiters, missing values, type casting) + DataSourceRegistry
   - Estimated: 6 hours
 
 - [ ] Task 2.3: YAML configuration loader
