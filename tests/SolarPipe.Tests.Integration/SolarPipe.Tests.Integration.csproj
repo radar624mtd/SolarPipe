@@ -5,6 +5,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <NoWarn>MSB3277</NoWarn>
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
   </PropertyGroup>
@@ -22,7 +23,14 @@
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\..\src\SolarPipe.Data\SolarPipe.Data.csproj" />
+    <ProjectReference Include="..\..\src\SolarPipe.Config\SolarPipe.Config.csproj" />
+    <ProjectReference Include="..\..\src\SolarPipe.Training\SolarPipe.Training.csproj" />
+    <ProjectReference Include="..\..\src\SolarPipe.Host\SolarPipe.Host.csproj" />
   </ItemGroup>
 
 </Project>

@@ -5,6 +5,9 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <!-- MSB3277: Microsoft.Extensions.ML 3.0.1 pulls Extensions.DI.Abstractions 2.1.0,
+         conflicting with 8.0.1 from SolarPipe.Host. Runtime resolves to newer; benign. -->
+    <NoWarn>MSB3277</NoWarn>
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
   </PropertyGroup>

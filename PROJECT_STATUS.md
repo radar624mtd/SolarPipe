@@ -233,17 +233,17 @@
   - Estimated: 6 hours
 
 #### Week 4: CLI & Integration
-- [ ] Task 4.1: CLI Host implementation
+- [x] Task 4.1: CLI Host implementation
   - Program.cs entry point
   - DependencyInjection setup (IServiceCollection)
   - Command pattern for train, predict, validate, inspect
   - Estimated: 8 hours
 
-- [ ] Task 4.2: TrainCommand & PredictCommand
+- [x] Task 4.2: TrainCommand & PredictCommand
   - Config loading, stage selection, training orchestration
   - Model registry interaction
   - Output formatting (JSON, human-readable)
-  - Tests: 4 integration tests
+  - Tests: 4 integration tests (ValidateCommand valid/invalid, TrainCommand registers model, PredictCommand writes JSON)
   - Estimated: 6 hours
 
 - [ ] Task 4.3: Phase 1 integration test
