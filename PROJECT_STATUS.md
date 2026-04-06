@@ -14,8 +14,8 @@
 | **Architecture** | ✅ Complete | Documented in SolarPipe_Architecture_Plan.docx |
 | **CLAUDE.md** | ✅ Complete | Development guide created |
 | **Automation Setup** | ✅ Complete | 2 skills, 2 agents, 3 hooks configured |
-| **Implementation** | 🟢 In Progress | Phase 2 started — Task 5.1 done |
-| **Overall Progress** | 29% | 11 of ~40 implementation tasks done; 100 tests passing (93 unit, 4 integration, 3 pipeline) |
+| **Implementation** | 🟢 In Progress | Phase 2 — Tasks 5.1, 5.2, 5.3, 7.2 done |
+| **Overall Progress** | 37% | 14 of ~40 implementation tasks done; 120 tests passing (120 unit, 0 integration, 0 pipeline) |
 
 ---
 
@@ -263,19 +263,19 @@
   - Tests: 18 test cases (all operators, nested expressions, precedence, error cases)
   - Estimated: 10 hours
 
-- [ ] Task 5.2: DragBasedModel physics implementation
-  - ODE solver (RK4 integration)
-  - Drag coefficient computation
-  - Arrival time calculation
-  - Input/output validation
-  - Tests: 6 test cases (slow/fast CMEs, edge cases)
+- [x] Task 5.2: DragBasedModel physics implementation
+  - ODE solver (Dormand-Prince RK4(5) adaptive, FSAL)
+  - Drag coefficient computation (γ·(v-w)·|v-w|)
+  - Arrival time calculation (segment integration with crossing detection)
+  - Input/output validation (RULE-032: v₀∈[200,3500], γ∈[0.2e-7,2.1e-7], dist≥20 R☉)
+  - Tests: 12 test cases (slow/fast CMEs, Carrington-class stability, NaN propagation, save/load)
   - Estimated: 8 hours
 
-- [ ] Task 5.3: PhysicsAdapter framework
-  - Equation registry pattern
-  - IPhysicsEquation interface
-  - DragBasedModel registration
-  - Tests: 4 test cases
+- [x] Task 5.3: PhysicsAdapter framework
+  - Equation registry pattern (IPhysicsEquation interface)
+  - PhysicsAdapter implements IFrameworkAdapter (FrameworkType.Physics)
+  - DragEquation + DragBasedModel registration
+  - Tests: 4 test cases (framework type, supported models, train+predict end-to-end)
   - Estimated: 4 hours
 
 #### Week 6-7: Composition Models
@@ -317,11 +317,11 @@
   - Tests: 10 test cases
   - Estimated: 8 hours
 
-- [ ] Task 7.2: Dormand-Prince RK4(5) ODE solver implementation (~200 lines C#)
+- [x] Task 7.2: Dormand-Prince RK4(5) ODE solver implementation (~200 lines C#)
   - Reusable for DragBasedModel and BurtonOde (ADR-003, RULE-030)
-  - MathNet.Numerics used ONLY for matrix operations, NOT ODE solving
-  - Burton equation setup (stub for Phase 4)
+  - FSAL tableau, embedded error estimation, adaptive step control (atol=1e-8, rtol=1e-6)
   - NaN propagation guard after every ODE step (RULE-121)
+  - Scalar + vector overloads; both tested
   - Estimated: 6 hours
 
 - [ ] Task 7.3: Phase 2 integration tests
