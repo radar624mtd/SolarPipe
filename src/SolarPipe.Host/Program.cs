@@ -47,9 +47,11 @@ internal static class Program
 
         var csvProvider = new CsvProvider();
         var sqliteProvider = new SqliteProvider();
+        var parquetProvider = new ParquetProvider();
         var dataRegistry = new DataSourceRegistry();
         dataRegistry.RegisterProvider(csvProvider);
         dataRegistry.RegisterProvider(sqliteProvider);
+        dataRegistry.RegisterProvider(parquetProvider);
 
         var mlNetAdapter = new MlNetAdapter();
         var adapters = new IFrameworkAdapter[] { mlNetAdapter };
