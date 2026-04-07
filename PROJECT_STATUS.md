@@ -2,7 +2,7 @@
 
 **Project**: ML Orchestration Framework for Space Weather Forecasting
 **Status**: 🟢 In Progress — Phase 4
-**Last Updated**: 2026-04-06 (Phase 4 Task 14.1 complete — PythonSidecarAdapter Arrow IPC + health check; 238 unit tests passing)
+**Last Updated**: 2026-04-06 (Phase 4 Task 14.2 complete — Docker + docker-compose; 238 unit tests passing)
 **Target Completion**: Q3 2026 (19 weeks from start — extended from 16 with 25% per-phase buffer)
 
 ---
@@ -14,8 +14,8 @@
 | **Architecture** | ✅ Complete | Documented in SolarPipe_Architecture_Plan.docx |
 | **CLAUDE.md** | ✅ Complete | Development guide created |
 | **Automation Setup** | ✅ Complete | 2 skills, 2 agents, 3 hooks configured |
-| **Implementation** | 🟢 In Progress | Phase 4 Task 14.1 complete (238 unit tests); next: Task 14.2 Docker |
-| **Overall Progress** | 87% | 35 of ~40 implementation tasks done; 238 unit tests passing |
+| **Implementation** | 🟢 In Progress | Phase 4 Task 14.2 complete (238 unit tests); next: Task 14.3 end-to-end tests |
+| **Overall Progress** | 90% | 36 of ~40 implementation tasks done; 238 unit tests passing |
 
 ---
 
@@ -468,10 +468,10 @@
   - Tests: 4 test cases (round-trip, null→NaN, float64 rejection, unreachable server)
   - Estimated: 6 hours
 
-- [ ] Task 14.2: Docker & deployment
-  - Python sidecar Dockerfile
-  - .NET host Docker setup
-  - docker-compose for local development
+- [x] Task 14.2: Docker & deployment
+  - python/Dockerfile: Python 3.12-slim, grpcio + pyarrow + torch, binds 0.0.0.0:50051 (RULE-062)
+  - Dockerfile: .NET 8 SDK → publish → aspnet:8.0 runtime, multi-stage, Release build
+  - docker-compose.yml: sidecar + host services, shared logs/models volumes, healthcheck, SOLARPIPE_SIDECAR_ADDRESS env
   - Estimated: 4 hours
 
 - [ ] Task 14.3: Phase 4 end-to-end tests

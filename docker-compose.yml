@@ -1,0 +1,69 @@
+# SolarPipe local development compose file.
+#
+# Services:
+#   sidecar  — Python gRPC server (PyTorch TFT + NeuralODE trainer)
+#   host     — .NET 8 CLI (train / predict / validate commands)
+#
+# Usage:
+#   # Start sidecar only (for development with local .NET):
+#   docker compose up sidecar
+#
+#   # Full stack — train a model end-to-end:
+#   docker compose run --rm host train --config /configs/flux_rope_v1.yaml
+#
+#   # Rebuild after code changes:
+#   docker compose build
+#
+# Volume mounts:
+#   configs/   — pipeline YAML files (read-only in containers)
+#   models/    — registry and trained model artifacts (shared read-write)
+#   logs/      — structured JSON logs from both services (shared read-write)
+#   data/      — input data files (SQLite, CSV, Parquet — read-only)
+
+services:
+  sidecar:
+    build:
+      context: .
+      dockerfile: python/Dockerfile
+    image: solarpipe-sidecar:latest
+    container_name: solarpipe_sidecar
+    # RULE-062: bind to 0.0.0.0 inside the container; expose on host port 50051
+    ports:
+      - "50051:50051"
+    volumes:
+      - ./logs:/app/logs
+      - ./models:/app/models
+    environment:
+      - PYTHONUNBUFFERED=1
+    # Restart on crash so .NET host can reconnect (RULE-060: lifecycle guard)
+    restart: unless-stopped
+    healthcheck:
+      # grpc_health_probe is the standard tool for gRPC health checks;
+      # falls back to TCP check if not installed in the image.
+      test: ["CMD-SHELL", "python -c \"import grpc; ch=grpc.insecure_channel('localhost:50051'); grpc.channel_ready_future(ch).result(timeout=5)\" || exit 1"]
+      interval: 10s
+      timeout: 6s
+      retries: 5
+      start_period: 20s
+
+  host:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: solarpipe-host:latest
+    container_name: solarpipe_host
+    depends_on:
+      sidecar:
+        condition: service_healthy
+    volumes:
+      - ./configs:/configs:ro
+      - ./data:/data:ro
+      - ./logs:/app/logs
+      - ./models:/app/models
+    environment:
+      # Point gRPC sidecar to compose service name (RULE-062: host-addressable)
+      - SOLARPIPE_SIDECAR_ADDRESS=http://sidecar:50051
+    # host is a CLI tool — no long-running process; override CMD per run:
+    #   docker compose run --rm host train --config /configs/...
+    profiles:
+      - cli
