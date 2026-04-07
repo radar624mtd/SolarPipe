@@ -2,7 +2,7 @@
 
 Last updated: 2026-04-07
 
-## Current Phase: Phase 1 — Foundation
+## Current Phase: Phase 1 — Foundation ✅ COMPLETE
 
 ### Completed This Session
 
@@ -11,6 +11,20 @@ Last updated: 2026-04-07
 - [x] **Database schema**: `src/solarpipe_data/database/schema.py` — SQLAlchemy ORM for all 15 staging tables + `make_engine()` with WAL mode event listener + `init_db()`.
 - [x] **Port script**: `scripts/port_solar_data.py` — maps `solar_data.db` → `staging.db` for 9 tables (donki_cme, cdaw_cme, donki_flare, omni_hourly, symh_hourly, gfz_kp_ap, silso_daily_ssn, donki_gst, donki_ips).
 - [x] **CLAUDE.md rewrite**: 30 agent rules (corrected from 26), critical rules table (20 rows), complete API reference, existing data inventory, storage architecture clarification (SQLite staging + Parquet ENLIL output).
+- [x] **1.1** Pydantic settings verified: `get_settings()` loads from env; posix path normalisation confirmed.
+- [x] **1.2** `database/migrations.py` — `current_version()`, `apply_pending()`, `migrate()` with MIGRATIONS registry.
+- [x] **1.3** `database/queries.py` — `upsert()`, `temporal_range()`, `max_timestamp()`, `row_count()`.
+- [x] **1.4** `src/solarpipe_data/cli.py` — Click harness: `fetch`, `ingest`, `crossmatch`, `build`, `validate`, `status` with `run_async` bridge.
+- [x] **1.5** `clients/base.py` — `BaseClient` with token-bucket rate limiter, file cache (check-before-rate-limit), retry on 429/5xx with `Retry-After` support.
+- [x] **1.6** `clients/donki.py` — DONKI client: CME, CMEAnalysis (mostAccurateOnly=true), FLR, GST, IPS, ENLIL, notifications (30d chunks only).
+- [x] **1.7** `ingestion/ingest_donki_cme.py` — parse DONKI CME JSON → upsert `cme_events`; AR=0→None, linked events extracted, best analysis by level_of_data.
+- [x] **1.8** Unit tests: 30 tests passing. `test_donki.py` (date chunking, rate limiter, cache, fetch methods), `test_donki_cme.py` (parsing, sentinels, upsert idempotency).
+
+### Phase 1 Infrastructure Notes
+
+- `pyproject.toml` build backend changed from `setuptools.backends.legacy:build` → `setuptools.build_meta` (legacy backend not available on this system).
+- `pytest-asyncio` installed system-wide (not in venv — no venv policy).
+- `pip install -e .` required for test imports; package is `solarpipe-data` from `src/`.
 
 ### Port Existing Data (one-time, if staging.db missing)
 
@@ -19,17 +33,6 @@ python scripts/port_solar_data.py \
     --source /c/Users/radar/SolarPipe/solar_data.db \
     --target ./data/staging/staging.db
 ```
-
-### Pending Phase 1 Tasks
-
-- [ ] **1.1** Verify Pydantic settings load correctly (`python -c "from solarpipe_data.config import get_settings; print(get_settings())"`)
-- [ ] **1.2** `database/migrations.py` — version tracking + column-add migration helpers
-- [ ] **1.3** `database/queries.py` — common query patterns (upsert helpers, temporal range queries)
-- [ ] **1.4** `src/solarpipe_data/cli.py` — Click harness: `fetch`, `ingest`, `crossmatch`, `build`, `validate`, `status`
-- [ ] **1.5** `clients/base.py` — BaseClient: httpx.AsyncClient, token-bucket rate limiter, retry with backoff, file cache
-- [ ] **1.6** `clients/donki.py` — NASA DONKI client (CME, CMEAnalysis, FLR, GST, IPS, ENLIL, HSS, SEP)
-- [ ] **1.7** `ingestion/ingest_donki_cme.py` — parse DONKI JSON → upsert cme_events by activity_id
-- [ ] **1.8** Unit tests: `tests/unit/test_clients/test_donki.py`, `tests/unit/test_ingestion/test_donki_cme.py`
 
 ---
 
@@ -72,7 +75,7 @@ python scripts/port_solar_data.py \
 
 | Phase | Focus | Key Deliverable | Status |
 |-------|-------|-----------------|--------|
-| 1 | Foundation | staging.db seeded, CLI + BaseClient + DONKI client | In Progress |
+| 1 | Foundation | staging.db seeded, CLI + BaseClient + DONKI client | Complete ✅ |
 | 2 | CME & Flare Catalogs | CDAW, GOES flares, DONKI ancillary | Not started |
 | 3 | Solar Wind & Indices | SWPC, Kyoto Dst, Kp, F10.7 (incremental only — bulk ported) | Not started |
 | 4 | SHARP Features | JSOC DRMS client, 18 keywords, disk-passage filter | Not started |

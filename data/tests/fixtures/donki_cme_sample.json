@@ -1,0 +1,80 @@
+[
+  {
+    "activityID": "2016-09-06T14:18Z-CME-001",
+    "startTime": "2016-09-06T14:18Z",
+    "sourceLocation": "S09W11",
+    "activeRegionNum": 12673,
+    "catalog": "M2M_CATALOG",
+    "note": "CME from active region 12673.",
+    "instruments": [
+      {"displayName": "SOHO: LASCO/C2"},
+      {"displayName": "SOHO: LASCO/C3"}
+    ],
+    "link": "https://kauai.ccmc.gsfc.nasa.gov/DONKI/view/CME/12345/-1",
+    "cmeAnalyses": [
+      {
+        "isMostAccurate": true,
+        "speed": 1571.0,
+        "halfAngle": 34.0,
+        "latitude": -9.0,
+        "longitude": -11.0,
+        "isEarthDirected": true,
+        "type": "C",
+        "levelOfData": 2
+      }
+    ],
+    "linkedEvents": [
+      {"activityID": "2016-09-06T14:00Z-FLR-001"},
+      {"activityID": "2016-09-09T23:10Z-GST-001"}
+    ]
+  },
+  {
+    "activityID": "2016-09-10T09:48Z-CME-001",
+    "startTime": "2016-09-10T09:48Z",
+    "sourceLocation": null,
+    "activeRegionNum": 0,
+    "catalog": "M2M_CATALOG",
+    "note": null,
+    "instruments": [],
+    "link": null,
+    "cmeAnalyses": [],
+    "linkedEvents": []
+  },
+  {
+    "activityID": "2023-12-14T17:00Z-CME-001",
+    "startTime": "2023-12-14T17:00Z",
+    "sourceLocation": "N04W00",
+    "activeRegionNum": 13514,
+    "catalog": "M2M_CATALOG",
+    "note": "X2.8 flare associated.",
+    "instruments": [{"displayName": "SOHO: LASCO/C2"}],
+    "link": "https://kauai.ccmc.gsfc.nasa.gov/DONKI/view/CME/23456/-1",
+    "cmeAnalyses": [
+      {
+        "isMostAccurate": false,
+        "speed": 1400.0,
+        "halfAngle": 45.0,
+        "latitude": 4.0,
+        "longitude": 0.0,
+        "isEarthDirected": true,
+        "type": "C",
+        "levelOfData": 1
+      },
+      {
+        "isMostAccurate": true,
+        "speed": 1488.0,
+        "halfAngle": 48.0,
+        "latitude": 4.0,
+        "longitude": 0.0,
+        "isEarthDirected": true,
+        "type": "C",
+        "levelOfData": 2
+      }
+    ],
+    "linkedEvents": [
+      {"activityID": "2023-12-14T17:02Z-FLR-001"},
+      {"activityID": "2023-12-17T00:00Z-IPS-001"},
+      {"activityID": "2023-12-17T12:00Z-GST-001"}
+    ]
+  }
+]
