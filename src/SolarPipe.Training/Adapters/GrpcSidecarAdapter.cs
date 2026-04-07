@@ -33,6 +33,28 @@ public sealed class GrpcSidecarAdapter : IFrameworkAdapter, IDisposable
         Directory.CreateDirectory(_tempDir);
     }
 
+    // CheckHealthAsync: attempts to connect to the gRPC channel within a timeout.
+    // Returns true if the channel reaches the Ready state, false on timeout/error.
+    // Used by SidecarLifecycleService and for pre-flight checks before TrainAsync.
+    public async Task<bool> CheckHealthAsync(TimeSpan timeout, CancellationToken ct)
+    {
+        try
+        {
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            cts.CancelAfter(timeout);
+            await _channel.ConnectAsync(cts.Token);
+            return true;
+        }
+        catch (OperationCanceledException)
+        {
+            return false;
+        }
+        catch (Exception)
+        {
+            return false;
+        }
+    }
+
     public async Task<ITrainedModel> TrainAsync(
         StageConfig config,
         IDataFrame trainingData,
