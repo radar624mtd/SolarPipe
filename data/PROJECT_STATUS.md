@@ -2,7 +2,7 @@
 
 Last updated: 2026-04-07
 
-## Current Phase: Phase 1 — Foundation ✅ COMPLETE
+## Current Phase: Phase 2 — CME & Flare Catalogs ✅ COMPLETE
 
 ### Completed This Session
 
@@ -19,6 +19,19 @@ Last updated: 2026-04-07
 - [x] **1.6** `clients/donki.py` — DONKI client: CME, CMEAnalysis (mostAccurateOnly=true), FLR, GST, IPS, ENLIL, notifications (30d chunks only).
 - [x] **1.7** `ingestion/ingest_donki_cme.py` — parse DONKI CME JSON → upsert `cme_events`; AR=0→None, linked events extracted, best analysis by level_of_data.
 - [x] **1.8** Unit tests: 30 tests passing. `test_donki.py` (date chunking, rate limiter, cache, fetch methods), `test_donki_cme.py` (parsing, sentinels, upsert idempotency).
+
+---
+
+## Phase 2 — CME & Flare Catalogs ✅ COMPLETE
+
+Last updated: 2026-04-07
+
+- [x] **2.1** `clients/cdaw.py` — `CdawClient` with `fetch_month()` and `fetch_range()`; UNIVERSAL_ver2 URL; per-month HTML cache; body-length guard (RULE-037, RULE-051).
+- [x] **2.2** `ingestion/ingest_cdaw_lasco.py` — BeautifulSoup HTML parser (RULE-050); Halo→None/360; footnote stripping `re.sub(r'[^0-9.\-].*$', '', cell)` (RULE-052); quality_flag from remarks; `speed_20rs_kms` canonical (RULE-053); upsert idempotent.
+- [x] **2.3** `ingestion/ingest_donki_enlil.py` + `ingest_donki_gst.py` + `ingest_donki_ips.py` — ENLIL linked_cme_ids from cmeInputs; GST kp_index_max computed; IPS instruments JSON; all upsert idempotent (RULE-045).
+- [x] **2.4** `clients/noaa_indices.py` — NOAA SWPC client: `fetch_flares_recent()` (7-day) and `fetch_flares_year(satellite, year)`. `ingestion/ingest_flares.py` — GOES + DONKI FLR parsers; class letter/magnitude split; AR=0→None; upsert idempotent.
+- [x] **2.5** `ingestion/dedup_flares.py` — SQL self-join dedup: begin_time ±2 min + same AR; stamps goes_satellite onto DONKI record; deletes GOES duplicate.
+- [x] **2.6** Tests: 104 total (89 unit + 15 integration), all passing. New fixtures: `cdaw_month_sample.html`, `goes_flares_sample.json`, `donki_flares_sample.json`, `donki_gst_sample.json`, `donki_ips_sample.json`, `donki_enlil_sample.json`.
 
 ### Phase 1 Infrastructure Notes
 
@@ -76,7 +89,7 @@ python scripts/port_solar_data.py \
 | Phase | Focus | Key Deliverable | Status |
 |-------|-------|-----------------|--------|
 | 1 | Foundation | staging.db seeded, CLI + BaseClient + DONKI client | Complete ✅ |
-| 2 | CME & Flare Catalogs | CDAW, GOES flares, DONKI ancillary | Not started |
+| 2 | CME & Flare Catalogs | CDAW, GOES flares, DONKI ancillary | Complete ✅ |
 | 3 | Solar Wind & Indices | SWPC, Kyoto Dst, Kp, F10.7 (incremental only — bulk ported) | Not started |
 | 4 | SHARP Features | JSOC DRMS client, 18 keywords, disk-passage filter | Not started |
 | 5 | Cross-Matching | CME↔Flare, CME↔ICME, feature assembly, quality flags | Not started |
