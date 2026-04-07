@@ -119,6 +119,20 @@ def port_cdaw_cme(src: sqlite3.Connection, tgt: sqlite3.Connection) -> int:
     return count
 
 
+def _csv_to_json(value: str | None) -> str | None:
+    """Convert a bare comma-separated activity-ID string to a JSON array.
+
+    Source donki_flare.linked_event_ids stores plain CSV strings like
+    "2011-06-07T06:50:00-CME-001, 2011-06-07T08:25:00-SEP-001".
+    The staging schema expects a JSON array: ["id1", "id2"].
+    Returns None for None / empty inputs.
+    """
+    if not value:
+        return None
+    ids = [s.strip() for s in value.split(",") if s.strip()]
+    return json.dumps(ids) if ids else None
+
+
 def port_donki_flare(src: sqlite3.Connection, tgt: sqlite3.Connection) -> int:
     src_cur = src.execute(
         "SELECT flare_id, begin_time, peak_time, end_time, date, class_type, "
@@ -129,6 +143,8 @@ def port_donki_flare(src: sqlite3.Connection, tgt: sqlite3.Connection) -> int:
     count = 0
     for row in src_cur:
         r = _row_to_dict(src_cur, row)
+        # Convert bare CSV string to JSON array (schema contract)
+        r["linked_event_ids"] = _csv_to_json(r.get("linked_event_ids"))
         tgt.execute(
             """INSERT OR REPLACE INTO flares (
                 flare_id, begin_time, peak_time, end_time, date,
@@ -209,9 +225,14 @@ def port_symh(src: sqlite3.Connection, tgt: sqlite3.Connection) -> int:
 def port_gfz_kp(src: sqlite3.Connection, tgt: sqlite3.Connection) -> int:
     # Source gfz_kp_ap has 1 row per day. hour_interval holds days_since_1932,
     # not a time-of-day string. Use date as the datetime PK directly.
+    #
+    # Column mapping NOTE: the source "Kp" column is actually the Bartels
+    # rotation day (1-27 cycling), not the Kp geomagnetic index. The "ap"
+    # column holds the correct daily Kp-proxy on a 0-9 normalised scale, and
+    # "daily_Ap" is the daily mean Ap. Map ap -> kp_3hr.kp for correct values.
     src_cur = src.execute(
         "SELECT date AS datetime, "
-        "Kp, ap, definitive, daily_Ap, daily_F10_7_obs, daily_F10_7_adj "
+        "ap AS Kp, ap, definitive, daily_Ap, daily_F10_7_obs, daily_F10_7_adj "
         "FROM gfz_kp_ap"
     )
     count = 0
