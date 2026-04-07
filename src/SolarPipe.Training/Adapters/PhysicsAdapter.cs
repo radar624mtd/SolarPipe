@@ -23,7 +23,7 @@ public sealed class PhysicsAdapter : IFrameworkAdapter
             ["DragBased"] = dragModel,
         };
         _equations = registry;
-        SupportedModels = [.. _equations.Keys];
+        SupportedModels = ["DragBased", "BurtonOde", "NewellCoupling"];
     }
 
     public Task<ITrainedModel> TrainAsync(
@@ -32,15 +32,19 @@ public sealed class PhysicsAdapter : IFrameworkAdapter
         IDataFrame? validationData,
         CancellationToken ct)
     {
-        if (!_equations.TryGetValue(config.ModelType, out _))
-            throw new NotSupportedException(
-                $"PhysicsAdapter does not support model type '{config.ModelType}'. " +
-                $"Supported: [{string.Join(", ", SupportedModels)}] (stage={config.Name}).");
-
         // Physics "training" = extract and validate hyperparameters from config
-        ITrainedModel model = config.ModelType.Equals("DragBased", StringComparison.OrdinalIgnoreCase)
-            ? new DragBasedModel(config)
-            : throw new NotSupportedException($"Model type '{config.ModelType}' not implemented (stage={config.Name}).");
+        ITrainedModel model = config.ModelType switch
+        {
+            var t when t.Equals("DragBased", StringComparison.OrdinalIgnoreCase)
+                => new DragBasedModel(config),
+            var t when t.Equals("BurtonOde", StringComparison.OrdinalIgnoreCase)
+                => new BurtonOde(config),
+            var t when t.Equals("NewellCoupling", StringComparison.OrdinalIgnoreCase)
+                => new NewellCoupling(config),
+            _ => throw new NotSupportedException(
+                $"PhysicsAdapter does not support model type '{config.ModelType}'. " +
+                $"Supported: [{string.Join(", ", SupportedModels)}] (stage={config.Name}).")
+        };
 
         return Task.FromResult(model);
     }

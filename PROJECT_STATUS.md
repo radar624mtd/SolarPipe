@@ -2,7 +2,7 @@
 
 **Project**: ML Orchestration Framework for Space Weather Forecasting
 **Status**: 🟢 In Progress — Phase 4
-**Last Updated**: 2026-04-06 (Phase 4 Task 12.1 complete — OnnxAdapter + OnnxTrainedModel; 218 unit tests passing)
+**Last Updated**: 2026-04-06 (Phase 4 Task 12.2 complete — BurtonOde + NewellCoupling; 227 unit tests passing)
 **Target Completion**: Q3 2026 (19 weeks from start — extended from 16 with 25% per-phase buffer)
 
 ---
@@ -14,8 +14,8 @@
 | **Architecture** | ✅ Complete | Documented in SolarPipe_Architecture_Plan.docx |
 | **CLAUDE.md** | ✅ Complete | Development guide created |
 | **Automation Setup** | ✅ Complete | 2 skills, 2 agents, 3 hooks configured |
-| **Implementation** | 🟢 In Progress | Phase 4 Task 12.1 complete (218 unit tests); next: Task 12.2 Physics |
-| **Overall Progress** | 77% | 31 of ~40 implementation tasks done; 218 unit tests passing |
+| **Implementation** | 🟢 In Progress | Phase 4 Task 12.2 complete (227 unit tests); next: Task 13.1 RestApiProvider |
+| **Overall Progress** | 80% | 32 of ~40 implementation tasks done; 227 unit tests passing |
 
 ---
 
@@ -437,11 +437,11 @@
   - Tests: 4 test cases (FrameworkType, SupportedModels, missing model_path, nonexistent file)
   - Estimated: 6 hours
 
-- [ ] Task 12.2: Physics implementations (Phase 2 stub completion)
+- [x] Task 12.2: Physics implementations (Phase 2 stub completion)
   - BurtonOde: dDst*/dt = Q(t) - Dst*/τ(VBs)
   - NewellCoupling: v^4/3 × B_T^2/3 × sin^8/3(θ_c/2)
   - ODE integration with adaptive time-stepping
-  - Tests: 6 test cases (reference data validation)
+  - Tests: 9 test cases (4 Burton + 5 Newell)
   - Estimated: 8 hours
 
 #### Week 15: REST API & Neural ODE
