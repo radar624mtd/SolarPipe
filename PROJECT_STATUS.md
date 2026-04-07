@@ -2,7 +2,7 @@
 
 **Project**: ML Orchestration Framework for Space Weather Forecasting
 **Status**: 🟢 In Progress — Phase 4
-**Last Updated**: 2026-04-06 (Phase 4 Task 11.3 complete — TFT trainer unit tests; 254 tests passing: 214 unit, 37 integration, 3 pipeline)
+**Last Updated**: 2026-04-06 (Phase 4 Task 12.1 complete — OnnxAdapter + OnnxTrainedModel; 218 unit tests passing)
 **Target Completion**: Q3 2026 (19 weeks from start — extended from 16 with 25% per-phase buffer)
 
 ---
@@ -14,8 +14,8 @@
 | **Architecture** | ✅ Complete | Documented in SolarPipe_Architecture_Plan.docx |
 | **CLAUDE.md** | ✅ Complete | Development guide created |
 | **Automation Setup** | ✅ Complete | 2 skills, 2 agents, 3 hooks configured |
-| **Implementation** | 🟢 In Progress | Phase 4 Task 11.3 complete (254 tests); next: Task 12.1 OnnxAdapter |
-| **Overall Progress** | 75% | 30 of ~40 implementation tasks done; 254 tests passing (214 unit, 37 integration, 3 pipeline) |
+| **Implementation** | 🟢 In Progress | Phase 4 Task 12.1 complete (218 unit tests); next: Task 12.2 Physics |
+| **Overall Progress** | 77% | 31 of ~40 implementation tasks done; 218 unit tests passing |
 
 ---
 
@@ -430,11 +430,11 @@
   - Estimated: 8 hours
 
 #### Week 14: ONNX & Advanced Physics
-- [ ] Task 12.1: OnnxAdapter implementation
-  - ONNX Runtime integration
-  - Model loading and inference
-  - Input/output tensor mapping
-  - Tests: 4 test cases
+- [x] Task 12.1: OnnxAdapter implementation
+  - ONNX Runtime integration (Microsoft.ML.OnnxRuntime v1.18.0)
+  - Standard mode: single forward pass; NeuralOde mode: Dormand-Prince C# solver + ORT per step (RULE-070)
+  - Input/output tensor mapping via IDataFrame.GetColumn()
+  - Tests: 4 test cases (FrameworkType, SupportedModels, missing model_path, nonexistent file)
   - Estimated: 6 hours
 
 - [ ] Task 12.2: Physics implementations (Phase 2 stub completion)
