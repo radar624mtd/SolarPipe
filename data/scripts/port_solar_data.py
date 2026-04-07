@@ -207,8 +207,10 @@ def port_symh(src: sqlite3.Connection, tgt: sqlite3.Connection) -> int:
 
 
 def port_gfz_kp(src: sqlite3.Connection, tgt: sqlite3.Connection) -> int:
+    # Source gfz_kp_ap has 1 row per day. hour_interval holds days_since_1932,
+    # not a time-of-day string. Use date as the datetime PK directly.
     src_cur = src.execute(
-        "SELECT date || ' ' || hour_interval AS datetime, "
+        "SELECT date AS datetime, "
         "Kp, ap, definitive, daily_Ap, daily_F10_7_obs, daily_F10_7_adj "
         "FROM gfz_kp_ap"
     )
