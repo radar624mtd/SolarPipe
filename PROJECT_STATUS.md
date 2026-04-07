@@ -2,7 +2,7 @@
 
 **Project**: ML Orchestration Framework for Space Weather Forecasting
 **Status**: 🟢 In Progress — Phase 4
-**Last Updated**: 2026-04-06 (Phase 4 Task 13.1 complete — RestApiProvider NOAA SWPC + DONKI; 232 unit tests passing)
+**Last Updated**: 2026-04-06 (Phase 4 Task 13.2 complete — Neural ODE trainer unit tests; 234 unit tests passing)
 **Target Completion**: Q3 2026 (19 weeks from start — extended from 16 with 25% per-phase buffer)
 
 ---
@@ -14,8 +14,8 @@
 | **Architecture** | ✅ Complete | Documented in SolarPipe_Architecture_Plan.docx |
 | **CLAUDE.md** | ✅ Complete | Development guide created |
 | **Automation Setup** | ✅ Complete | 2 skills, 2 agents, 3 hooks configured |
-| **Implementation** | 🟢 In Progress | Phase 4 Task 13.1 complete (232 unit tests); next: Task 13.2 Neural ODE |
-| **Overall Progress** | 82% | 33 of ~40 implementation tasks done; 232 unit tests passing |
+| **Implementation** | 🟢 In Progress | Phase 4 Task 13.2 complete (234 unit tests); next: Task 14.1 PythonSidecarAdapter |
+| **Overall Progress** | 85% | 34 of ~40 implementation tasks done; 234 unit tests passing |
 
 ---
 
@@ -454,11 +454,10 @@
   - Tests: 5 test cases
   - Estimated: 6 hours
 
-- [ ] Task 13.2: Neural ODE trainer
-  - torchdiffeq integration
-  - Training loop
-  - ONNX export
-  - Tests: 2 test cases
+- [x] Task 13.2: Neural ODE trainer
+  - torchdiffeq integration in Python sidecar (solarpipe_server.py _train_neural_ode)
+  - Training loop + ONNX export (_export_neural_ode_onnx, dynamics network only — RULE-070)
+  - Tests: 2 test cases (gRPC routing + Arrow IPC float32 for state/t_start/t_end columns)
   - Estimated: 6 hours
 
 #### Week 19: Integration & Polish
