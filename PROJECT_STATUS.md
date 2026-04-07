@@ -2,7 +2,7 @@
 
 **Project**: ML Orchestration Framework for Space Weather Forecasting
 **Status**: 🟢 In Progress — Phase 4
-**Last Updated**: 2026-04-06 (Phase 4 Task 12.2 complete — BurtonOde + NewellCoupling; 227 unit tests passing)
+**Last Updated**: 2026-04-06 (Phase 4 Task 13.1 complete — RestApiProvider NOAA SWPC + DONKI; 232 unit tests passing)
 **Target Completion**: Q3 2026 (19 weeks from start — extended from 16 with 25% per-phase buffer)
 
 ---
@@ -14,8 +14,8 @@
 | **Architecture** | ✅ Complete | Documented in SolarPipe_Architecture_Plan.docx |
 | **CLAUDE.md** | ✅ Complete | Development guide created |
 | **Automation Setup** | ✅ Complete | 2 skills, 2 agents, 3 hooks configured |
-| **Implementation** | 🟢 In Progress | Phase 4 Task 12.2 complete (227 unit tests); next: Task 13.1 RestApiProvider |
-| **Overall Progress** | 80% | 32 of ~40 implementation tasks done; 227 unit tests passing |
+| **Implementation** | 🟢 In Progress | Phase 4 Task 13.1 complete (232 unit tests); next: Task 13.2 Neural ODE |
+| **Overall Progress** | 82% | 33 of ~40 implementation tasks done; 232 unit tests passing |
 
 ---
 
@@ -445,12 +445,13 @@
   - Estimated: 8 hours
 
 #### Week 15: REST API & Neural ODE
-- [ ] Task 13.1: RestApiProvider
+- [x] Task 13.1: RestApiProvider
   - HTTP client setup (System.Net.Http)
   - JSON deserialization
-  - NOAA DSCOVR/ACE real-time data support
-  - DONKI API integration (CME catalog)
-  - Tests: 4 test cases
+  - NOAA DSCOVR/ACE real-time data support (swpc_solar_wind endpoint type)
+  - DONKI API integration (donki_cme endpoint type, cmeAnalyses flattening)
+  - DSCOVR safe-hold gap handling: null JSON → float.NaN (RULE-120)
+  - Tests: 5 test cases
   - Estimated: 6 hours
 
 - [ ] Task 13.2: Neural ODE trainer
