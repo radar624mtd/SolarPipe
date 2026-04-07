@@ -28,6 +28,15 @@ cache/
 appsettings.local.json
 .claude/settings.local.json
 
+# Claude Code workspace memory (machine-local, not for repo)
+.claude/
+data/.claude/
+
+# Data pipeline — raw cache, staging DB, output artifacts
+data/data/raw/
+data/data/staging/
+data/data/output/
+
 # OS artifacts
 .DS_Store
 Thumbs.db

@@ -1,0 +1,1 @@
+"""SolarPipe data acquisition pipeline."""

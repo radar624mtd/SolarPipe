@@ -1,0 +1,57 @@
+# SolarPipe Data Acquisition — default configuration
+# Override any value with environment variables (e.g. NASA_API_KEY=...)
+
+data_dir: ./data
+staging_db_path: ./data/staging/staging.db
+output_db_path: ./data/output/cme_catalog.db
+
+log_level: INFO
+log_dir: ./logs
+
+# NASA DONKI
+nasa_api_key: DEMO_KEY
+nasa_api_email: ""
+donki_base_url: "https://api.nasa.gov/DONKI"
+donki_rate_limit: 0.5  # req/s (registered key); use 0.03 for DEMO_KEY
+
+# CDAW LASCO
+cdaw_base_url: "https://cdaw.gsfc.nasa.gov/CME_list"
+cdaw_rate_limit: 0.5   # req/s — be polite, no published limit
+
+# NOAA SWPC
+swpc_base_url: "https://services.swpc.noaa.gov"
+swpc_rate_limit: 1.0
+
+# Stanford JSOC
+jsoc_email: ""         # Required for FITS export; keyword queries work without it
+jsoc_timeout_s: 60     # drms has no internal timeout — always wrap
+
+# Kyoto WDC Dst
+kyoto_base_url: "https://wdc.kugi.kyoto-u.ac.jp"
+kyoto_rate_limit: 0.33  # req/s — fragile server
+
+# GFZ Potsdam Kp
+gfz_kp_url: "https://kp.gfz-potsdam.de/app/json/"
+gfz_rate_limit: 0.5
+
+# HTTP client behavior
+http_timeout_s: 30
+http_max_retries: 3
+http_backoff_base_s: 2.0
+cache_enabled: true
+cache_ttl_hours: 24
+
+# SHARP disk-passage filter
+sharp_lon_fwt_max_deg: 60.0
+
+# Cross-match windows
+cme_flare_window_min: 30
+cme_flare_spatial_deg: 15
+cme_icme_window_hours: 12
+icme_storm_window_hours_min: 24
+icme_storm_window_hours_max: 48
+dst_storm_threshold_nT: -30
+
+# Quality filtering
+min_quality_flag: 3
+donki_verified_start: "2012-01-01"  # Pre-2012 has ~43% sample rejection
