@@ -30,16 +30,28 @@ def _register(version: int, description: str):
 # ---------------------------------------------------------------------------
 
 # Version 1 is the initial schema created by init_db(); no migration needed.
-# Add migrate_v2, migrate_v3, etc. here when columns/tables change.
 
-# Example (commented out — do not activate until Phase 2):
-# @_register(2, "Add quality_score column to cme_events")
-# def migrate_v2(engine: sa.Engine) -> None:
-#     with engine.connect() as conn:
-#         conn.execute(sa.text(
-#             "ALTER TABLE cme_events ADD COLUMN quality_score REAL"
-#         ))
-#         conn.commit()
+@_register(2, "Add sw_ambient_context table (Phase 3 ambient solar wind context)")
+def migrate_v2(engine: sa.Engine) -> None:
+    from .schema import Base
+    with engine.connect() as conn:
+        # Create table if not already present (idempotent)
+        conn.execute(sa.text("""
+            CREATE TABLE IF NOT EXISTS sw_ambient_context (
+                activity_id TEXT PRIMARY KEY,
+                window_start TEXT,
+                window_end TEXT,
+                n_hours INTEGER,
+                sw_speed_ambient REAL,
+                sw_density_ambient REAL,
+                sw_bt_ambient REAL,
+                sw_bz_ambient REAL,
+                source_catalog TEXT NOT NULL DEFAULT 'OMNI',
+                fetch_timestamp TEXT,
+                data_version TEXT
+            )
+        """))
+        conn.commit()
 
 
 # ---------------------------------------------------------------------------

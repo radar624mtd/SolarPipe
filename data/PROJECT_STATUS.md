@@ -2,9 +2,23 @@
 
 Last updated: 2026-04-07
 
-## Current Phase: Phase 2 — CME & Flare Catalogs ✅ COMPLETE
+## Current Phase: Phase 3 — Solar Wind & Indices ✅ COMPLETE
 
-### Completed This Session
+## Phase 3 — Solar Wind & Indices ✅ COMPLETE
+
+Last updated: 2026-04-07
+
+- [x] **3.1** `clients/swpc.py` — SWPC 7-day mag+plasma JSON feeds; `_parse_swpc_table()` with RULE-071 Z-strip + RULE-072 5min guard; sentinel 99999.9→None; bz_gsm canonical (RULE-070).
+- [x] **3.2** `ingestion/ingest_solar_wind.py` — 1-min→hourly averages; ACE/DSCOVR transition July 2016 (RULE-073); incremental from MAX(datetime); RULE-003 sentinel conversion.
+- [x] **3.3** `clients/kyoto.py` + `ingestion/ingest_dst.py` — Cascade final>provisional>realtime (RULE-080); HTML table parser (RULE-081 post-2019 only); sentinel >500/<-500→None (RULE-082); RULE-037 empty body guard.
+- [x] **3.4** `ingestion/ingest_kp.py` — GFZ incremental from MAX(datetime); RULE-010 bulk already ported.
+- [x] **3.5** `ingestion/ingest_f107.py` — NOAA SWPC observed solar cycle indices JSON; monthly records stored at YYYY-MM-01.
+- [x] **3.6** `database/schema.py` `SwAmbientContext` table + `migrations.py` v2 + `ingestion/ingest_sw_ambient.py` — 6h pre-CME window averages of speed/density/Bt/Bz_GSM; batch upsert (RULE-036); migration applied to staging.db (schema_version=2).
+- [x] **3.7** Tests: 145 total (130 unit + 15 integration), all passing. New tests: `test_swpc.py` (parse, sentinel, hourly averaging, ACE/DSCOVR), `test_solar_wind.py` (build_row, idempotent upsert), `test_kyoto.py` (HTML parser, pre-block parser, cascade logic), `test_kp_f107.py` (GFZ parsing, F10.7 parsing, ambient context helpers).
+
+---
+
+### Completed This Session (Phase 1-2)
 
 - [x] **Workspace scaffold**: `pyproject.toml`, full directory tree (`src/`, `tests/`, `configs/`, `scripts/`, `data/raw/`, `data/staging/`, `data/output/`)
 - [x] **Configuration system**: `src/solarpipe_data/config.py` — Pydantic settings with YAML + env-var overrides. All 7 API sources configured. `NASA_API_KEY`, `STANFORD_JSOC_EMAIL` read from env.
@@ -90,7 +104,7 @@ python scripts/port_solar_data.py \
 |-------|-------|-----------------|--------|
 | 1 | Foundation | staging.db seeded, CLI + BaseClient + DONKI client | Complete ✅ |
 | 2 | CME & Flare Catalogs | CDAW, GOES flares, DONKI ancillary | Complete ✅ |
-| 3 | Solar Wind & Indices | SWPC, Kyoto Dst, Kp, F10.7 (incremental only — bulk ported) | Not started |
+| 3 | Solar Wind & Indices | SWPC, Kyoto Dst, Kp, F10.7 (incremental only — bulk ported) | Complete ✅ |
 | 4 | SHARP Features | JSOC DRMS client, 18 keywords, disk-passage filter | Not started |
 | 5 | Cross-Matching | CME↔Flare, CME↔ICME, feature assembly, quality flags | Not started |
 | 6 | Synthetic & Export | ENLIL emulator, Parquet export, cme_catalog.db, validation | Not started |

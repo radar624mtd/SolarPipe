@@ -369,6 +369,27 @@ class SilsoDailySSN(Base):
 
 
 # ---------------------------------------------------------------------------
+# Ambient solar wind context — 6-hour pre-arrival averages per CME
+# Computed from solar_wind_hourly for the 6-hour window before each CME start_time
+# ---------------------------------------------------------------------------
+class SwAmbientContext(Base):
+    __tablename__ = "sw_ambient_context"
+
+    activity_id: str = Column(String, primary_key=True)  # FK → cme_events.activity_id
+    window_start: str = Column(String, nullable=True)    # CME start_time - 6h
+    window_end: str = Column(String, nullable=True)      # CME start_time
+    n_hours: int = Column(Integer, nullable=True)        # number of hours averaged
+    sw_speed_ambient: float = Column(Float, nullable=True)   # mean flow_speed km/s
+    sw_density_ambient: float = Column(Float, nullable=True) # mean proton_density /cm³
+    sw_bt_ambient: float = Column(Float, nullable=True)      # mean |Bt| nT
+    sw_bz_ambient: float = Column(Float, nullable=True)      # mean bz_gsm nT
+    # Provenance
+    source_catalog: str = Column(String, nullable=False, default="OMNI")
+    fetch_timestamp: str = Column(String, nullable=True)
+    data_version: str = Column(String, nullable=True)
+
+
+# ---------------------------------------------------------------------------
 # Schema version tracker — for migrations.py
 # ---------------------------------------------------------------------------
 class SchemaVersion(Base):
