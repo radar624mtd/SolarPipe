@@ -101,12 +101,15 @@ def _load_completed_pairs(engine: sa.Engine) -> set[tuple[str, str]]:
 def _fetch_cme_contexts_sync(
     client: JsocClient,
     activity_id: str,
-    noaa_ar: int,
+    noaa_ar: int | None,
     cme_dt: datetime,
     fetch_ts: str,
     skip_contexts: set[str],
 ) -> list[dict[str, Any]]:
-    """Synchronous: fetch all 4 contexts for one CME. Called from thread pool."""
+    """Synchronous: fetch all 4 contexts for one CME. Called from thread pool.
+
+    If noaa_ar is None, falls back to fetching all active HARPs at that time.
+    """
     rows: list[dict[str, Any]] = []
     for context, offset in _CONTEXTS:
         if context in skip_contexts:
@@ -114,7 +117,10 @@ def _fetch_cme_contexts_sync(
         t_query = cme_dt + offset
         if t_query < _HMI_START:
             continue
-        records = client.fetch_sharp_at_time(noaa_ar, t_query, context)
+        if noaa_ar is not None:
+            records = client.fetch_sharp_at_time(noaa_ar, t_query, context)
+        else:
+            records = client.fetch_sharp_at_time_all_harps(t_query, context)
         for rec in records:
             rec["fetch_timestamp"] = fetch_ts
             rec["activity_id"] = activity_id
@@ -192,9 +198,11 @@ async def ingest_sharps(
         cme_dt = _parse_cme_time(start_time or "")
         if cme_dt is None:
             continue
-        noaa_ar = int(noaa_ar_raw) if noaa_ar_raw and int(noaa_ar_raw) > 0 else None
-        if noaa_ar is None:
-            continue  # No AR number — JSOC query requires it
+        try:
+            noaa_ar = int(noaa_ar_raw) if noaa_ar_raw and int(noaa_ar_raw) > 0 else None
+        except (TypeError, ValueError):
+            noaa_ar = None
+        # noaa_ar=None is OK — falls back to all-HARP time query
 
         # Determine which contexts still need fetching
         skip = {ctx for ctx, _ in _CONTEXTS if (activity_id, ctx) in completed}

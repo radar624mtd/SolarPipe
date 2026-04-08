@@ -8,7 +8,8 @@ Rules enforced:
 - RULE-044: level_of_data preference 2 > 1 > 0
 - RULE-045: Broken linkedEvents references handled with null FKs
 
-Base URL: https://api.nasa.gov/DONKI
+Primary base URL: https://kauai.ccmc.gsfc.nasa.gov/DONKI/WS/get (no api_key needed)
+Fallback base URL: https://api.nasa.gov/DONKI (requires api_key, historically unreliable)
 """
 from __future__ import annotations
 
@@ -47,7 +48,10 @@ class DonkiClient(BaseClient):
         self._api_key = settings.nasa_api_key
 
     def _params(self, extra: dict[str, Any] | None = None) -> dict[str, Any]:
-        p: dict[str, Any] = {"api_key": self._api_key}
+        # kauai.ccmc.gsfc.nasa.gov does not use api_key; api.nasa.gov does
+        p: dict[str, Any] = {}
+        if "api.nasa.gov" in self._base_url:
+            p["api_key"] = self._api_key
         if extra:
             p.update(extra)
         return p

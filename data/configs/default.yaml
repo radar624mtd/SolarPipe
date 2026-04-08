@@ -11,8 +11,8 @@ log_dir: ./logs
 # NASA DONKI
 nasa_api_key: DEMO_KEY
 nasa_api_email: ""
-donki_base_url: "https://api.nasa.gov/DONKI"
-donki_rate_limit: 0.5  # req/s (registered key); use 0.03 for DEMO_KEY
+donki_base_url: "https://kauai.ccmc.gsfc.nasa.gov/DONKI/WS/get"  # Direct CCMC endpoint — no api_key, more reliable than api.nasa.gov proxy
+donki_rate_limit: 0.5  # req/s
 
 # CDAW LASCO
 cdaw_base_url: "https://cdaw.gsfc.nasa.gov/CME_list"
@@ -35,7 +35,7 @@ gfz_kp_url: "https://kp.gfz-potsdam.de/app/json/"
 gfz_rate_limit: 0.5
 
 # HTTP client behavior
-http_timeout_s: 30
+http_timeout_s: 120  # kauai DONKI can be slow (2MB+ responses); 30s was too short
 http_max_retries: 3
 http_backoff_base_s: 2.0
 cache_enabled: true

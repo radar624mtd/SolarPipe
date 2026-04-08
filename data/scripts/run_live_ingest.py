@@ -115,6 +115,47 @@ def ingest_cme_analyses(engine, records: list[dict]) -> int:
 
 
 # ---------------------------------------------------------------------------
+# DONKI annual-chunk helpers
+# kauai.ccmc.gsfc.nasa.gov times out on requests spanning many years.
+# Chunk by year and ingest incrementally to avoid large payloads.
+# ---------------------------------------------------------------------------
+def _annual_chunks(start: date, end: date) -> list[tuple[str, str]]:
+    """Return list of (start_s, end_s) covering start→end in annual slices."""
+    chunks = []
+    y = start.year
+    while True:
+        chunk_start = date(y, 1, 1) if y > start.year else start
+        chunk_end = date(y, 12, 31) if y < end.year else end
+        if chunk_start > end:
+            break
+        chunks.append((chunk_start.strftime("%Y-%m-%d"), chunk_end.strftime("%Y-%m-%d")))
+        if y >= end.year:
+            break
+        y += 1
+    return chunks
+
+
+async def _fetch_donki_chunked(
+    settings,
+    fetch_fn_name: str,
+    start: date,
+    end: date,
+    force: bool,
+) -> list[dict]:
+    """Fetch a DONKI endpoint in annual chunks, concatenate results."""
+    chunks = _annual_chunks(start, end)
+    all_records: list[dict] = []
+    for chunk_start, chunk_end in chunks:
+        logger.info("  DONKI %s chunk %s → %s", fetch_fn_name, chunk_start, chunk_end)
+        async with DonkiClient(settings) as client:
+            fn = getattr(client, fetch_fn_name)
+            records = await fn(chunk_start, chunk_end, force=force)
+        all_records.extend(records)
+        logger.info("  chunk done: %d records (total so far: %d)", len(records), len(all_records))
+    return all_records
+
+
+# ---------------------------------------------------------------------------
 # Main orchestration
 # ---------------------------------------------------------------------------
 async def run(
@@ -127,17 +168,14 @@ async def run(
 ) -> None:
     settings = get_settings()
     engine = make_engine(db_path)
-    start_s = start.strftime("%Y-%m-%d")
-    end_s = end.strftime("%Y-%m-%d")
     results: dict[str, Any] = {}
     t_total = time.monotonic()
 
-    # Step 1 — DONKI CME events (refresh)
+    # Step 1 — DONKI CME events (annual chunks)
     _banner("Step 1 — DONKI CME events")
     t0 = time.monotonic()
     try:
-        async with DonkiClient(settings) as client:
-            raw_cmes = await client.fetch_cme(start_s, end_s, force=force)
+        raw_cmes = await _fetch_donki_chunked(settings, "fetch_cme", start, end, force)
         n = ingest_cme_batch(engine, raw_cmes)
         results["cme_events"] = n
         _ok("DONKI CME events", n, time.monotonic() - t0)
@@ -145,12 +183,11 @@ async def run(
         _err("DONKI CME events", exc)
         results["cme_events"] = -1
 
-    # Step 2 — DONKI CME analyses
+    # Step 2 — DONKI CME analyses (annual chunks)
     _banner("Step 2 — DONKI CME analyses")
     t0 = time.monotonic()
     try:
-        async with DonkiClient(settings) as client:
-            raw_analyses = await client.fetch_cme_analysis(start_s, end_s, force=force)
+        raw_analyses = await _fetch_donki_chunked(settings, "fetch_cme_analysis", start, end, force)
         n = ingest_cme_analyses(engine, raw_analyses)
         results["cme_analyses"] = n
         _ok("DONKI CME analyses", n, time.monotonic() - t0)
@@ -158,12 +195,11 @@ async def run(
         _err("DONKI CME analyses", exc)
         results["cme_analyses"] = -1
 
-    # Step 3 — DONKI ENLIL simulations
+    # Step 3 — DONKI ENLIL simulations (annual chunks)
     _banner("Step 3 — DONKI ENLIL simulations")
     t0 = time.monotonic()
     try:
-        async with DonkiClient(settings) as client:
-            raw_enlil = await client.fetch_enlil(start_s, end_s, force=force)
+        raw_enlil = await _fetch_donki_chunked(settings, "fetch_enlil", start, end, force)
         n = ingest_enlil(engine, raw_enlil)
         results["enlil_simulations"] = n
         _ok("DONKI ENLIL simulations", n, time.monotonic() - t0)

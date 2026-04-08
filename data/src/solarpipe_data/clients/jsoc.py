@@ -108,6 +108,35 @@ class JsocClient:
 
         return _parse_sharp_df(df, context)
 
+    def fetch_sharp_at_time_all_harps(
+        self,
+        t_query: datetime,
+        context: str = "at_eruption",
+    ) -> list[dict[str, Any]]:
+        """Fetch SHARP keywords for ALL active HARPs at a given time (no AR filter).
+
+        Used when CME has no activeRegionNum. Returns all HARPs in ±6-min window;
+        LON_FWT > 60° records are still dropped (RULE-060).
+        """
+        t_start = t_query - timedelta(minutes=6)
+        t_end = t_query + timedelta(minutes=6)
+        t_start_str = _to_jsoc_time(t_start)
+        t_end_str = _to_jsoc_time(t_end)
+
+        ds = f"{_SERIES_CEA}[][{t_start_str}-{t_end_str}]"
+        keys = ",".join(_SW_KEYWORDS)
+
+        try:
+            df = self._query(ds, keys)
+        except Exception as exc:
+            logger.warning("JSOC all-HARP query failed at %s: %s", t_query, exc)
+            return []
+
+        if df is None or df.empty:
+            return []
+
+        return _parse_sharp_df(df, context)
+
     def fetch_sharp_by_harpnum(
         self,
         harpnum: int,

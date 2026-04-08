@@ -38,7 +38,7 @@ class Settings(BaseSettings):
     # NASA DONKI
     nasa_api_key: str = Field(default=_DEFAULTS.get("nasa_api_key", "DEMO_KEY"))
     nasa_api_email: str = Field(default=_DEFAULTS.get("nasa_api_email", ""))
-    donki_base_url: str = Field(default=_DEFAULTS.get("donki_base_url", "https://api.nasa.gov/DONKI"))
+    donki_base_url: str = Field(default=_DEFAULTS.get("donki_base_url", "https://kauai.ccmc.gsfc.nasa.gov/DONKI/WS/get"))
     donki_rate_limit: float = Field(default=_DEFAULTS.get("donki_rate_limit", 0.5))
 
     # CDAW
