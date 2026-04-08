@@ -409,6 +409,94 @@ class SwAmbientContext(Base):
 
 
 # ---------------------------------------------------------------------------
+# Feature vectors — assembled per CME in Phase 5 cross-matching
+# One row per DONKI CME activity_id; quality_flag 1–5 (≥3 usable for ML)
+# Null-fill policy: dimming/HCS features deferred (image/PFSS processing)
+# ---------------------------------------------------------------------------
+class FeatureVector(Base):
+    __tablename__ = "feature_vectors"
+
+    activity_id: str = Column(String, primary_key=True)    # FK → cme_events.activity_id
+    launch_time: str = Column(String, nullable=True)        # CME start_time (ISO UTC)
+
+    # --- Kinematic ---
+    cme_speed_kms: float = Column(Float, nullable=True)     # speed_kms from cme_events
+    cme_half_angle_deg: float = Column(Float, nullable=True)
+    cme_latitude: float = Column(Float, nullable=True)
+    cme_longitude: float = Column(Float, nullable=True)
+    cme_mass_grams: float = Column(Float, nullable=True)    # ~40% null — never impute
+    cme_angular_width_deg: float = Column(Float, nullable=True)  # from CDAW if matched
+
+    # --- Flare ---
+    linked_flare_id: str = Column(String, nullable=True)    # FK → flares.flare_id
+    flare_class_letter: str = Column(String, nullable=True)
+    flare_class_numeric: float = Column(Float, nullable=True)  # M2.3 → 2.3 * 1e-5 W/m²
+    flare_peak_time: str = Column(String, nullable=True)
+    flare_active_region: int = Column(Integer, nullable=True)
+    flare_match_method: str = Column(String, nullable=True)  # "linked"/"temporal"/"spatial"/"none"
+
+    # --- SHARP source region ---
+    sharp_harpnum: int = Column(Integer, nullable=True)
+    sharp_noaa_ar: int = Column(Integer, nullable=True)
+    sharp_snapshot_context: str = Column(String, nullable=True)  # at_eruption/minus_6h/etc.
+    usflux: float = Column(Float, nullable=True)
+    meangam: float = Column(Float, nullable=True)
+    meangbt: float = Column(Float, nullable=True)
+    meangbz: float = Column(Float, nullable=True)
+    meangbh: float = Column(Float, nullable=True)
+    meanjzd: float = Column(Float, nullable=True)
+    totusjz: float = Column(Float, nullable=True)
+    meanalp: float = Column(Float, nullable=True)
+    meanjzh: float = Column(Float, nullable=True)
+    totusjh: float = Column(Float, nullable=True)
+    absnjzh: float = Column(Float, nullable=True)
+    savncpp: float = Column(Float, nullable=True)
+    meanpot: float = Column(Float, nullable=True)
+    totpot: float = Column(Float, nullable=True)
+    meanshr: float = Column(Float, nullable=True)
+    shrgt45: float = Column(Float, nullable=True)
+    r_value: float = Column(Float, nullable=True)
+    area_acr: float = Column(Float, nullable=True)
+    sharp_match_method: str = Column(String, nullable=True)  # "noaa_ar"/"location"/"none"
+
+    # --- Ambient solar wind (6h pre-CME) ---
+    sw_speed_ambient: float = Column(Float, nullable=True)
+    sw_density_ambient: float = Column(Float, nullable=True)
+    sw_bt_ambient: float = Column(Float, nullable=True)
+    sw_bz_ambient: float = Column(Float, nullable=True)
+
+    # --- ICME / L1 arrival ---
+    linked_ips_id: str = Column(String, nullable=True)      # FK → interplanetary_shocks.ips_id
+    icme_arrival_time: str = Column(String, nullable=True)
+    transit_time_hours: float = Column(Float, nullable=True)
+    icme_match_method: str = Column(String, nullable=True)  # "linked"/"transit_estimate"/"none"
+    icme_match_confidence: float = Column(Float, nullable=True)  # 0–1
+
+    # --- Geomagnetic response ---
+    dst_min_nt: float = Column(Float, nullable=True)        # Dst minimum in 24–48h window
+    dst_min_time: str = Column(String, nullable=True)
+    kp_max: float = Column(Float, nullable=True)            # Kp max in same window
+    storm_threshold_met: bool = Column(Boolean, nullable=True)  # Dst < -30 nT
+
+    # --- Environmental (null-filled for now — deferred to Phase 6) ---
+    dimming_area: float = Column(Float, nullable=True)       # AIA processing — deferred
+    dimming_asymmetry: float = Column(Float, nullable=True)  # AIA processing — deferred
+    hcs_tilt_angle: float = Column(Float, nullable=True)     # PFSS model — deferred
+    hcs_distance: float = Column(Float, nullable=True)       # PFSS model — deferred
+
+    # --- Activity context ---
+    f10_7: float = Column(Float, nullable=True)              # F10.7 on launch date
+    sunspot_number: float = Column(Float, nullable=True)
+
+    # --- Quality ---
+    quality_flag: int = Column(Integer, nullable=False, default=3)  # 1–5; ≥3 usable
+
+    # Provenance
+    source_catalog: str = Column(String, nullable=False, default="crossmatch")
+    fetch_timestamp: str = Column(String, nullable=True)
+
+
+# ---------------------------------------------------------------------------
 # Schema version tracker — for migrations.py
 # ---------------------------------------------------------------------------
 class SchemaVersion(Base):

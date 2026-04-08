@@ -31,6 +31,62 @@ def _register(version: int, description: str):
 
 # Version 1 is the initial schema created by init_db(); no migration needed.
 
+@_register(5, "Add feature_vectors table (Phase 5 cross-matching output)")
+def migrate_v5(engine: sa.Engine) -> None:
+    with engine.connect() as conn:
+        conn.execute(sa.text("""
+            CREATE TABLE IF NOT EXISTS feature_vectors (
+                activity_id TEXT PRIMARY KEY,
+                launch_time TEXT,
+                cme_speed_kms REAL,
+                cme_half_angle_deg REAL,
+                cme_latitude REAL,
+                cme_longitude REAL,
+                cme_mass_grams REAL,
+                cme_angular_width_deg REAL,
+                linked_flare_id TEXT,
+                flare_class_letter TEXT,
+                flare_class_numeric REAL,
+                flare_peak_time TEXT,
+                flare_active_region INTEGER,
+                flare_match_method TEXT,
+                sharp_harpnum INTEGER,
+                sharp_noaa_ar INTEGER,
+                sharp_snapshot_context TEXT,
+                usflux REAL, meangam REAL, meangbt REAL, meangbz REAL,
+                meangbh REAL, meanjzd REAL, totusjz REAL, meanalp REAL,
+                meanjzh REAL, totusjh REAL, absnjzh REAL, savncpp REAL,
+                meanpot REAL, totpot REAL, meanshr REAL, shrgt45 REAL,
+                r_value REAL, area_acr REAL,
+                sharp_match_method TEXT,
+                sw_speed_ambient REAL, sw_density_ambient REAL,
+                sw_bt_ambient REAL, sw_bz_ambient REAL,
+                linked_ips_id TEXT,
+                icme_arrival_time TEXT,
+                transit_time_hours REAL,
+                icme_match_method TEXT,
+                icme_match_confidence REAL,
+                dst_min_nt REAL, dst_min_time TEXT,
+                kp_max REAL, storm_threshold_met INTEGER,
+                dimming_area REAL, dimming_asymmetry REAL,
+                hcs_tilt_angle REAL, hcs_distance REAL,
+                f10_7 REAL, sunspot_number REAL,
+                quality_flag INTEGER NOT NULL DEFAULT 3,
+                source_catalog TEXT NOT NULL DEFAULT 'crossmatch',
+                fetch_timestamp TEXT
+            )
+        """))
+        conn.execute(sa.text(
+            "CREATE INDEX IF NOT EXISTS ix_feature_vectors_quality "
+            "ON feature_vectors (quality_flag)"
+        ))
+        conn.execute(sa.text(
+            "CREATE INDEX IF NOT EXISTS ix_feature_vectors_launch_time "
+            "ON feature_vectors (launch_time)"
+        ))
+        conn.commit()
+
+
 @_register(4, "Add activity_id to sharp_keywords for resume/dedup support")
 def migrate_v4(engine: sa.Engine) -> None:
     with engine.connect() as conn:

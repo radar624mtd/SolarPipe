@@ -2,7 +2,7 @@
 
 Last updated: 2026-04-07
 
-## Current Phase: Phase 5 — Cross-Matching (ready to start)
+## Current Phase: Phase 5 — Cross-Matching (in progress)
 
 ### Live Data Run — COMPLETE (2026-04-07)
 
@@ -15,7 +15,7 @@ All tables populated. Final row counts:
 | `cdaw_cme_events` | 41,351 | Ported |
 | `enlil_simulations` | 5,972 | Full history 2010–2026 |
 | `flares` | 3,207 | Ported |
-| `dst_hourly` | 4,368 | Last 6 months realtime |
+| `dst_hourly` | 143,136 | 2010-01 → 2026-04 (WDC fixed-width format + HTML fallback; RULE-081 updated) |
 | `f107_daily` | 3,327 | Full NOAA history 1749–2026 |
 | `sharp_keywords` | 102,305 | 95.6% coverage (1,456/1,523 earth-directed CMEs) |
 | `sw_ambient_context` | 9,371 | Computed from all CMEs |
@@ -35,6 +35,22 @@ All tables populated. Final row counts:
 - DONKI endpoint: switched to `kauai.ccmc.gsfc.nasa.gov` (direct, no api_key, reliable)
 - `http_timeout_s`: 30→120 for large DONKI payloads
 - `scripts/run_live_ingest.py`: annual chunking for DONKI, full orchestration
+
+---
+
+## Phase 5 — Cross-Matching (in progress)
+
+Last updated: 2026-04-07
+
+- [x] **5.1** `crossmatch/cme_flare_matcher.py` — Priority: DONKI linkedEvents → temporal ±30 min + spatial ±15° fallback; null FKs for unmatched; `linked_missing` method when id referenced but absent from DB.
+- [x] **5.2** `crossmatch/cme_icme_matcher.py` — Priority: DONKI IPS linkedEvents (both directions) → drag-corrected transit estimate ±12 hr; `match_confidence` halved when multiple candidates; `icme_match_confidence` stored.
+- [x] **5.3** `crossmatch/cme_sharp_matcher.py` — NOAA AR match → spatial proximity fallback (|Δlat|≤15°, |Δlon|≤15°, Chebyshev); delegates snapshot preference to `select_sharp_features.get_best_sharp_snapshot()`; `_sharp_to_feature_dict()` flattens 18 keywords.
+- [x] **5.4** `crossmatch/storm_matcher.py` — Dst min + Kp max in 0–48 hr post-ICME window; L1 lag +45 min; `storm_threshold_met` = Dst < -30 nT.
+- [x] Unit tests: `test_cme_flare_matcher.py` (25 tests), `test_cme_icme_matcher.py` (20 tests), `test_cme_sharp_matcher.py` (10 tests), `test_storm_matcher.py` (12 tests) — 67 total, all passing (220 unit total).
+- [x] Schema: `database/migrations.py` v5 → `feature_vectors` table with all Phase 5 columns + 2 indexes.
+- [ ] **5.5** `crossmatch/feature_assembler.py` — 16+ column vector per event; null-fill deferred features (dimming, HCS).
+- [ ] **5.6** Quality flags (1–5) in feature_assembler.
+- [ ] **5.7** `transforms/validation.py` — physical consistency checks (speed↔transit, Dst↔Bz correlations).
 
 ---
 
@@ -155,5 +171,5 @@ python scripts/port_solar_data.py \
 | 2 | CME & Flare Catalogs | CDAW, GOES flares, DONKI ancillary | Complete ✅ |
 | 3 | Solar Wind & Indices | SWPC, Kyoto Dst, Kp, F10.7 (incremental only — bulk ported) | Complete ✅ |
 | 4 | SHARP Features | JSOC DRMS client, 18 keywords, disk-passage filter | Complete ✅ |
-| 5 | Cross-Matching | CME↔Flare, CME↔ICME, feature assembly, quality flags | Not started |
+| 5 | Cross-Matching | CME↔Flare, CME↔ICME, feature assembly, quality flags | In progress |
 | 6 | Synthetic & Export | ENLIL emulator, Parquet export, cme_catalog.db, validation | Not started |
