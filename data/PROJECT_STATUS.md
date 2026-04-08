@@ -2,33 +2,39 @@
 
 Last updated: 2026-04-07
 
-## Current Phase: Pre-Phase 5 — Live Data Run
+## Current Phase: Phase 5 — Cross-Matching (ready to start)
 
-### Live Data Run Status (2026-04-07)
+### Live Data Run — COMPLETE (2026-04-07)
 
-**Completed:**
-- `dst_hourly`: 4,368 rows (6 months, realtime cascade)
-- `f107_daily`: 3,327 rows (full NOAA history)
-- `sw_ambient_context`: 7,996 rows (computed from 8,037 CMEs + solar_wind_hourly)
-- `migrations.py` v4: added `activity_id` + index to `sharp_keywords` (resume support)
+All tables populated. Final row counts:
 
-**Bug fixes applied this session:**
-- `database/queries.py` `max_timestamp()`: fixed to accept both `(engine, TableClass, col)` and `("table_name", "col", engine)` calling conventions (4 ingest scripts were using string-first form)
-- `ingestion/ingest_sharps.py` `_parse_cme_time()`: removed incorrect `clean[:len(fmt)]` slice — DONKI timestamps like `"2010-06-13T16:42Z"` were silently returning `None`, causing 0 SHARP candidates
+| Table | Rows | Notes |
+|-------|------|-------|
+| `cme_events` | 9,413 | Refreshed from kauai DONKI (1,376 new vs ported data) |
+| `cme_analyses` | 8,038 | Full history 2010–2026 |
+| `cdaw_cme_events` | 41,351 | Ported |
+| `enlil_simulations` | 5,972 | Full history 2010–2026 |
+| `flares` | 3,207 | Ported |
+| `dst_hourly` | 4,368 | Last 6 months realtime |
+| `f107_daily` | 3,327 | Full NOAA history 1749–2026 |
+| `sharp_keywords` | 102,305 | 95.6% coverage (1,456/1,523 earth-directed CMEs) |
+| `sw_ambient_context` | 9,371 | Computed from all CMEs |
+| `kp_3hr` | 34,426 | Ported |
+| `solar_wind_hourly` | 561,024 | Ported |
+| `symh_hourly` | 396,624 | Ported |
+| `silso_daily_ssn` | 76,030 | Ported |
+| `geomagnetic_storms` | 192 | Ported |
+| `interplanetary_shocks` | 644 | Ported |
+| `harp_noaa_map` | 0 | Not needed for Phase 5; bulk HARP era query deferred |
 
-**Blocked (DONKI API unavailable — 503/timeout):**
-- `cme_analyses`: 0 rows — needs fresh DONKI `/CMEAnalysis` fetch
-- `enlil_simulations`: 0 rows — needs fresh DONKI `/WSAEnlilSimulations` fetch
-- DONKI `cme_events` refresh: existing 8,037 rows are from port script; `active_region_num` is NULL for all (port script didn't carry this field)
-
-**Blocked (depends on DONKI re-fetch):**
-- `sharp_keywords`: 0 rows — all 1,523 earth-directed CME candidates have `active_region_num = NULL`; JSOC requires a non-null NOAA AR or HARPNUM. Needs DONKI re-fetch to populate AR numbers.
-- `harp_noaa_map`: 0 rows — blocked same as above
-
-**Next actions (in order):**
-1. Re-run `python scripts/run_live_ingest.py --start 2010-01-01` when DONKI API recovers — steps 1-3 will populate `cme_events` (with AR numbers), `cme_analyses`, `enlil_simulations`
-2. Then re-run same script — SHARP step will proceed (AR numbers now available)
-3. After all tables populated: proceed to Phase 5
+**Bug fixes applied this session (all committed):**
+- `max_timestamp()`: dual calling convention fix (string-first vs engine-first)
+- `_parse_cme_time()`: removed `clean[:len(fmt)]` slice causing silent None returns
+- `ingest_sharps.py`: parallel fetch (8 workers), resume via `activity_id`, all-HARP fallback
+- `ingest_donki_enlil.py`: batch upsert fix (SQLite 999 bind-var limit)
+- DONKI endpoint: switched to `kauai.ccmc.gsfc.nasa.gov` (direct, no api_key, reliable)
+- `http_timeout_s`: 30→120 for large DONKI payloads
+- `scripts/run_live_ingest.py`: annual chunking for DONKI, full orchestration
 
 ---
 
