@@ -81,22 +81,27 @@ def _extract_linked_cme_ids(r: dict[str, Any]) -> list[str]:
     return linked
 
 
+_BATCH_SIZE = 100  # 8 cols × 100 rows = 800 bind vars, safely under SQLite's 999 limit (RULE-036)
+
+
 def _upsert_rows(engine: Engine, rows: list[dict[str, Any]]) -> None:
-    stmt = insert(EnlilSimulation).values(rows)
-    stmt = stmt.on_conflict_do_update(
-        index_elements=["simulation_id"],
-        set_={
-            "model_completion_time": stmt.excluded.model_completion_time,
-            "au": stmt.excluded.au,
-            "linked_cme_ids": stmt.excluded.linked_cme_ids,
-            "link": stmt.excluded.link,
-            "source_catalog": stmt.excluded.source_catalog,
-            "fetch_timestamp": stmt.excluded.fetch_timestamp,
-            "data_version": stmt.excluded.data_version,
-        },
-    )
-    with Session(engine) as s, s.begin():
-        s.execute(stmt)
+    for i in range(0, len(rows), _BATCH_SIZE):
+        batch = rows[i : i + _BATCH_SIZE]
+        stmt = insert(EnlilSimulation).values(batch)
+        stmt = stmt.on_conflict_do_update(
+            index_elements=["simulation_id"],
+            set_={
+                "model_completion_time": stmt.excluded.model_completion_time,
+                "au": stmt.excluded.au,
+                "linked_cme_ids": stmt.excluded.linked_cme_ids,
+                "link": stmt.excluded.link,
+                "source_catalog": stmt.excluded.source_catalog,
+                "fetch_timestamp": stmt.excluded.fetch_timestamp,
+                "data_version": stmt.excluded.data_version,
+            },
+        )
+        with Session(engine) as s, s.begin():
+            s.execute(stmt)
 
 
 def _str_or_none(v: Any) -> str | None:
