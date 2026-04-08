@@ -68,16 +68,16 @@ async def ingest_dst(
         logger.info("No Dst records returned.")
         return 0
 
-    # RULE-080: Load existing data_type for affected datetimes to enforce cascade
-    datetimes = [r["datetime"] for r in records]
+    # RULE-080: Load existing data_type for cascade logic.
+    # Full table scan instead of IN() to avoid SQLite 999 bind-variable limit
+    # on large date ranges (16 years = ~140K rows).
+    import sqlalchemy as _sa
 
     with Session(engine) as s, s.begin():
         existing = {
             row[0]: row[1]
             for row in s.execute(
-                DstHourly.__table__.select().where(
-                    DstHourly.__table__.c.datetime.in_(datetimes)
-                ).with_only_columns(
+                _sa.select(
                     DstHourly.__table__.c.datetime,
                     DstHourly.__table__.c.data_type,
                 )
