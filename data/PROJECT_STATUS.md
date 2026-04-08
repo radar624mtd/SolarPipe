@@ -49,7 +49,7 @@ Last updated: 2026-04-07
 - [x] Unit tests: `test_cme_flare_matcher.py` (25 tests), `test_cme_icme_matcher.py` (20 tests), `test_cme_sharp_matcher.py` (10 tests), `test_storm_matcher.py` (12 tests) — 67 total, all passing (220 unit total).
 - [x] Schema: `database/migrations.py` v5 → `feature_vectors` table with all Phase 5 columns + 2 indexes.
 - [x] **5.5** `crossmatch/feature_assembler.py` — 16+ column vector per event; null-fill deferred features (dimming, HCS). Unit tests: `test_feature_assembler.py` (29 tests). Total: 249 unit tests passing.
-- [ ] **5.6** Quality flags (1–5) in feature_assembler.
+- [x] **5.6** Quality flags (1–5) in `crossmatch/quality_scorer.py`; wired into `feature_assembler.py`. 10 key features; CDAW poor-event override; definitive-data gate for flag 5. Unit tests: `test_quality_scorer.py` (23 tests). Total: 272 unit tests passing.
 - [ ] **5.7** `transforms/validation.py` — physical consistency checks (speed↔transit, Dst↔Bz correlations).
 
 ---

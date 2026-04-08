@@ -1,13 +1,22 @@
-"""Task 5.5 — Feature vector assembly.
+"""Tasks 5.5–5.6 — Feature vector assembly and quality flags.
 
 Combines outputs from all four matchers (5.1–5.4) plus CME kinematics,
 ambient solar wind, and activity context (F10.7, sunspot number) into a
 single row per CME for the feature_vectors table.
 
-Quality flag is computed in Task 5.6; this module writes the default
-value (3) unless a quality-degrading condition is detected here.
+Quality flag (1–5) scoring (Task 5.6):
+    5 — All key features present; definitive source data (level_of_data=2)
+    4 — Minor gaps: 1–2 null key features
+    3 — Moderate gaps: 3–4 null key features (default minimum for ML use)
+    2 — Significant gaps: ≥5 null key features OR poor-quality source data
+    1 — Poor event: CDAW "Poor Event" / "Very Poor Event" tag
 
-Deferred (null-filled):
+Key features counted for gap scoring (10 total):
+    cme_speed_kms, cme_latitude, cme_longitude,
+    flare_class_letter, sharp_harpnum, usflux,
+    sw_speed_ambient, icme_arrival_time, dst_min_nt, f10_7
+
+Deferred (null-filled, not counted as gaps):
     dimming_area, dimming_asymmetry — AIA processing (Phase 6)
     hcs_tilt_angle, hcs_distance   — PFSS/GONG maps (Phase 6)
 """
@@ -28,6 +37,11 @@ from ..database.schema import (
     SilsoDailySSN,
     SwAmbientContext,
     make_engine,
+)
+from .quality_scorer import (
+    build_cdaw_quality_index,
+    compute_quality_flag,
+    lookup_cdaw_quality,
 )
 from ..database.queries import upsert
 from .cme_flare_matcher import run_cme_flare_matching
@@ -209,7 +223,7 @@ def assemble_feature_vector(
         "f10_7": _lookup_f107(launch_date, f107_index),
         "sunspot_number": _lookup_ssn(launch_date, ssn_index),
 
-        # Quality — default 3; refined by Task 5.6
+        # Quality — set by compute_quality_flag(); caller replaces this
         "quality_flag": 3,
 
         # Provenance
@@ -268,6 +282,7 @@ def run_feature_assembly(db_path: str) -> int:
     f107_index = _build_f107_index(engine)
     ssn_index = _build_ssn_index(engine)
     ambient_index = _build_ambient_index(engine)
+    cdaw_quality_index = build_cdaw_quality_index(engine)
 
     with Session(engine) as s:
         cmes = [dict(r._mapping) for r in s.execute(
@@ -278,8 +293,10 @@ def run_feature_assembly(db_path: str) -> int:
         ).fetchall()]
 
     logger.info(
-        "Assembling feature vectors for %d CMEs (f107=%d, ssn=%d, ambient=%d)",
-        len(cmes), len(f107_index), len(ssn_index), len(ambient_index),
+        "Assembling feature vectors for %d CMEs "
+        "(f107=%d, ssn=%d, ambient=%d, cdaw_poor=%d)",
+        len(cmes), len(f107_index), len(ssn_index),
+        len(ambient_index), len(cdaw_quality_index),
     )
 
     # --- Run matchers ---
@@ -305,6 +322,8 @@ def run_feature_assembly(db_path: str) -> int:
             f107_index=f107_index,
             ssn_index=ssn_index,
         )
+        cdaw_q = lookup_cdaw_quality(row.get("launch_time"), cdaw_quality_index)
+        row["quality_flag"] = compute_quality_flag(row, cdaw_quality=cdaw_q)
         rows.append(row)
 
     # --- Upsert ---
