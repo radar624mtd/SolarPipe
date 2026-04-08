@@ -369,6 +369,24 @@ class SilsoDailySSN(Base):
 
 
 # ---------------------------------------------------------------------------
+# HARP ↔ NOAA AR mapping — from hmi.sharp_720s (CCD series, has NOAA_ARS)
+# Used in Phase 5 cross-matching when NOAA_AR is 0 or multi-region
+# ---------------------------------------------------------------------------
+class HarpNoaaMap(Base):
+    __tablename__ = "harp_noaa_map"
+
+    id: int = Column(Integer, primary_key=True, autoincrement=True)
+    harpnum: int = Column(Integer, nullable=False, index=True)
+    noaa_ar: int = Column(Integer, nullable=True, index=True)   # None when NOAA_AR=0
+    noaa_ars: str = Column(String, nullable=True)               # tilde-separated multi-region
+    t_rec: str = Column(String, nullable=True)                  # ISO snapshot time
+    # Provenance
+    source_catalog: str = Column(String, nullable=False, default="JSOC")
+    fetch_timestamp: str = Column(String, nullable=True)
+    data_version: str = Column(String, nullable=True)
+
+
+# ---------------------------------------------------------------------------
 # Ambient solar wind context — 6-hour pre-arrival averages per CME
 # Computed from solar_wind_hourly for the 6-hour window before each CME start_time
 # ---------------------------------------------------------------------------

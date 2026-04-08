@@ -2,7 +2,20 @@
 
 Last updated: 2026-04-07
 
-## Current Phase: Phase 3 — Solar Wind & Indices ✅ COMPLETE
+## Current Phase: Phase 4 — SHARP Features ✅ COMPLETE
+
+## Phase 4 — SHARP Features ✅ COMPLETE
+
+Last updated: 2026-04-07
+
+- [x] **4.1** `clients/jsoc.py` — `JsocClient` with `_query()` ThreadPoolExecutor timeout wrapper (RULE-061); CEA series (RULE-062); `_parse_sharp_df()`: LON_FWT>60° filter (RULE-060), NOAA_AR=0→None (RULE-063), DATE__OBS normalised (RULE-064); HARP↔NOAA mapping via CCD series (RULE-063).
+- [x] **4.2** `ingestion/ingest_sharps.py` — 4-context snapshot query (at_eruption/±6h/±12h/+6h); Earth-directed proxy (|lat|≤45°, |lon|≤45°); HMI start guard (2010-05-01); batch insert 5K (RULE-036); coverage fraction logged with <80% warning.
+- [x] **4.3** `database/schema.py` `HarpNoaaMap` + `migrations.py` v3 — `harp_noaa_map` table with indexes on harpnum + noaa_ar; migration applied (schema_version=3).
+- [x] **4.4** `ingestion/select_sharp_features.py` — `get_best_sharp_snapshot()` with at_eruption>minus_6h>minus_12h preference; `compute_sharp_coverage()` logs fraction; `iter_best_snapshots()` generator for Phase 5.
+- [x] **4.5** Integration tests: `test_phase4_sharps.py` — schema existence, parse→insert flow, LON_FWT boundary filter, NOAA_AR=0 storage, coverage metric on empty DB, optimal snapshot preference validation.
+- [x] Unit tests: `test_jsoc.py` — time conversion, float helpers, parse_sharp_df (6 cases), earth-directed proxy, HMI start filter, snapshot preference order.
+
+---
 
 ## Phase 3 — Solar Wind & Indices ✅ COMPLETE
 
@@ -105,6 +118,6 @@ python scripts/port_solar_data.py \
 | 1 | Foundation | staging.db seeded, CLI + BaseClient + DONKI client | Complete ✅ |
 | 2 | CME & Flare Catalogs | CDAW, GOES flares, DONKI ancillary | Complete ✅ |
 | 3 | Solar Wind & Indices | SWPC, Kyoto Dst, Kp, F10.7 (incremental only — bulk ported) | Complete ✅ |
-| 4 | SHARP Features | JSOC DRMS client, 18 keywords, disk-passage filter | Not started |
+| 4 | SHARP Features | JSOC DRMS client, 18 keywords, disk-passage filter | Complete ✅ |
 | 5 | Cross-Matching | CME↔Flare, CME↔ICME, feature assembly, quality flags | Not started |
 | 6 | Synthetic & Export | ENLIL emulator, Parquet export, cme_catalog.db, validation | Not started |

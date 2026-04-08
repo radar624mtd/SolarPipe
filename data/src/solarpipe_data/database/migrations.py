@@ -31,6 +31,30 @@ def _register(version: int, description: str):
 
 # Version 1 is the initial schema created by init_db(); no migration needed.
 
+@_register(3, "Add harp_noaa_map table (Phase 4 HARP↔NOAA AR mapping)")
+def migrate_v3(engine: sa.Engine) -> None:
+    with engine.connect() as conn:
+        conn.execute(sa.text("""
+            CREATE TABLE IF NOT EXISTS harp_noaa_map (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                harpnum INTEGER NOT NULL,
+                noaa_ar INTEGER,
+                noaa_ars TEXT,
+                t_rec TEXT,
+                source_catalog TEXT NOT NULL DEFAULT 'JSOC',
+                fetch_timestamp TEXT,
+                data_version TEXT
+            )
+        """))
+        conn.execute(sa.text(
+            "CREATE INDEX IF NOT EXISTS ix_harp_noaa_map_harpnum ON harp_noaa_map (harpnum)"
+        ))
+        conn.execute(sa.text(
+            "CREATE INDEX IF NOT EXISTS ix_harp_noaa_map_noaa_ar ON harp_noaa_map (noaa_ar)"
+        ))
+        conn.commit()
+
+
 @_register(2, "Add sw_ambient_context table (Phase 3 ambient solar wind context)")
 def migrate_v2(engine: sa.Engine) -> None:
     from .schema import Base
