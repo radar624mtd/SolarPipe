@@ -31,6 +31,23 @@ def _register(version: int, description: str):
 
 # Version 1 is the initial schema created by init_db(); no migration needed.
 
+@_register(4, "Add activity_id to sharp_keywords for resume/dedup support")
+def migrate_v4(engine: sa.Engine) -> None:
+    with engine.connect() as conn:
+        # SQLite allows adding a nullable column; safe on populated or empty table
+        try:
+            conn.execute(sa.text(
+                "ALTER TABLE sharp_keywords ADD COLUMN activity_id TEXT"
+            ))
+        except Exception:
+            pass  # Column already exists — idempotent
+        conn.execute(sa.text(
+            "CREATE INDEX IF NOT EXISTS ix_sharp_keywords_activity_id "
+            "ON sharp_keywords (activity_id, query_context)"
+        ))
+        conn.commit()
+
+
 @_register(3, "Add harp_noaa_map table (Phase 4 HARP↔NOAA AR mapping)")
 def migrate_v3(engine: sa.Engine) -> None:
     with engine.connect() as conn:

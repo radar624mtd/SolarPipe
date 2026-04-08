@@ -2,6 +2,36 @@
 
 Last updated: 2026-04-07
 
+## Current Phase: Pre-Phase 5 — Live Data Run
+
+### Live Data Run Status (2026-04-07)
+
+**Completed:**
+- `dst_hourly`: 4,368 rows (6 months, realtime cascade)
+- `f107_daily`: 3,327 rows (full NOAA history)
+- `sw_ambient_context`: 7,996 rows (computed from 8,037 CMEs + solar_wind_hourly)
+- `migrations.py` v4: added `activity_id` + index to `sharp_keywords` (resume support)
+
+**Bug fixes applied this session:**
+- `database/queries.py` `max_timestamp()`: fixed to accept both `(engine, TableClass, col)` and `("table_name", "col", engine)` calling conventions (4 ingest scripts were using string-first form)
+- `ingestion/ingest_sharps.py` `_parse_cme_time()`: removed incorrect `clean[:len(fmt)]` slice — DONKI timestamps like `"2010-06-13T16:42Z"` were silently returning `None`, causing 0 SHARP candidates
+
+**Blocked (DONKI API unavailable — 503/timeout):**
+- `cme_analyses`: 0 rows — needs fresh DONKI `/CMEAnalysis` fetch
+- `enlil_simulations`: 0 rows — needs fresh DONKI `/WSAEnlilSimulations` fetch
+- DONKI `cme_events` refresh: existing 8,037 rows are from port script; `active_region_num` is NULL for all (port script didn't carry this field)
+
+**Blocked (depends on DONKI re-fetch):**
+- `sharp_keywords`: 0 rows — all 1,523 earth-directed CME candidates have `active_region_num = NULL`; JSOC requires a non-null NOAA AR or HARPNUM. Needs DONKI re-fetch to populate AR numbers.
+- `harp_noaa_map`: 0 rows — blocked same as above
+
+**Next actions (in order):**
+1. Re-run `python scripts/run_live_ingest.py --start 2010-01-01` when DONKI API recovers — steps 1-3 will populate `cme_events` (with AR numbers), `cme_analyses`, `enlil_simulations`
+2. Then re-run same script — SHARP step will proceed (AR numbers now available)
+3. After all tables populated: proceed to Phase 5
+
+---
+
 ## Current Phase: Phase 4 — SHARP Features ✅ COMPLETE
 
 ## Phase 4 — SHARP Features ✅ COMPLETE

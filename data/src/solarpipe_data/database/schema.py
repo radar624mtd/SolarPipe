@@ -215,6 +215,7 @@ class SharpKeyword(Base):
     lat_fwt: float = Column(Float, nullable=True)
     lon_fwt: float = Column(Float, nullable=True)            # Must be ≤60° at ingest
     query_context: str = Column(String, nullable=True)       # at_eruption / minus_6h / etc.
+    activity_id: str = Column(String, nullable=True)          # FK → cme_events.activity_id (for resume)
     # Provenance
     source_catalog: str = Column(String, nullable=False, default="JSOC")
     fetch_timestamp: str = Column(String, nullable=True)
