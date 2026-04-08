@@ -1,6 +1,6 @@
 # PROJECT_STATUS.md — SolarPipe Data Acquisition Pipeline
 
-Last updated: 2026-04-07
+Last updated: 2026-04-08
 
 ## Current Phase: Phase 5 — Cross-Matching (in progress)
 
@@ -50,7 +50,7 @@ Last updated: 2026-04-07
 - [x] Schema: `database/migrations.py` v5 → `feature_vectors` table with all Phase 5 columns + 2 indexes.
 - [x] **5.5** `crossmatch/feature_assembler.py` — 16+ column vector per event; null-fill deferred features (dimming, HCS). Unit tests: `test_feature_assembler.py` (29 tests). Total: 249 unit tests passing.
 - [x] **5.6** Quality flags (1–5) in `crossmatch/quality_scorer.py`; wired into `feature_assembler.py`. 10 key features; CDAW poor-event override; definitive-data gate for flag 5. Unit tests: `test_quality_scorer.py` (23 tests). Total: 272 unit tests passing.
-- [ ] **5.7** `transforms/validation.py` — physical consistency checks (speed↔transit, Dst↔Bz correlations).
+- [x] **5.7** `transforms/validation.py` — physical consistency checks (speed↔transit, Dst↔Bz correlations); pure-Python Spearman r (no scipy); range gates for speed (100–3000 km/s) and density (0.1–100 cm⁻³); `ValidationReport` dataclass + `run_validation(engine)` DB entry point. Unit tests: `test_validation.py` (32 tests). Total: 304 unit tests passing.
 
 ---
 
