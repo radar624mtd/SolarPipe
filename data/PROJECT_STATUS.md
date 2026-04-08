@@ -48,7 +48,7 @@ Last updated: 2026-04-07
 - [x] **5.4** `crossmatch/storm_matcher.py` — Dst min + Kp max in 0–48 hr post-ICME window; L1 lag +45 min; `storm_threshold_met` = Dst < -30 nT.
 - [x] Unit tests: `test_cme_flare_matcher.py` (25 tests), `test_cme_icme_matcher.py` (20 tests), `test_cme_sharp_matcher.py` (10 tests), `test_storm_matcher.py` (12 tests) — 67 total, all passing (220 unit total).
 - [x] Schema: `database/migrations.py` v5 → `feature_vectors` table with all Phase 5 columns + 2 indexes.
-- [ ] **5.5** `crossmatch/feature_assembler.py` — 16+ column vector per event; null-fill deferred features (dimming, HCS).
+- [x] **5.5** `crossmatch/feature_assembler.py` — 16+ column vector per event; null-fill deferred features (dimming, HCS). Unit tests: `test_feature_assembler.py` (29 tests). Total: 249 unit tests passing.
 - [ ] **5.6** Quality flags (1–5) in feature_assembler.
 - [ ] **5.7** `transforms/validation.py` — physical consistency checks (speed↔transit, Dst↔Bz correlations).
 
