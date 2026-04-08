@@ -1,0 +1,106 @@
+# SolarPipe — Flux Rope Propagation Pipeline Configuration v1
+# Consumed by C# SolarPipe.Host via SqliteProvider + ParquetProvider.
+# Column names in this file MUST match cme_catalog.db exactly (ARCHITECTURE.md).
+
+pipeline:
+  name: flux_rope_propagation_v1
+  version: "1.0"
+  description: "CME flux-rope propagation and geomagnetic impact prediction"
+
+inputs:
+  cme_catalog:
+    provider: SqliteProvider
+    path: "data/output/cme_catalog.db"
+    tables:
+      - cme_events
+      - flux_rope_fits
+      - l1_arrivals
+    min_quality_flag: 3
+
+  enlil_ensemble:
+    provider: ParquetProvider
+    path: "data/output/enlil_runs/enlil_ensemble_v1.parquet"
+
+# -----------------------------------------------------------------------
+# cme_events — CME identity and kinematic features
+# Column names must match sqlite_export.py exactly
+# -----------------------------------------------------------------------
+cme_events:
+  primary_key: event_id
+  columns:
+    identity:
+      - event_id           # TEXT  DONKI activity_id
+      - launch_time        # TEXT  ISO 8601 UTC
+      - source_location    # TEXT  e.g. "S12W30"
+      - noaa_ar            # INT   active region; null if unknown
+    kinematic:
+      - cme_speed          # REAL  km/s at 21.5 R☉
+      - cme_mass           # REAL  grams; ~40% null — never impute
+      - cme_angular_width  # REAL  degrees (360 = halo)
+      - flare_class_numeric # REAL  W/m² proxy (0 = no flare)
+    source_region:
+      - chirality          # TEXT  "positive"/"negative"/null
+      - initial_axis_angle # REAL  degrees
+      - usflux             # REAL  SHARP USFLUX Mx
+      - totpot             # REAL  SHARP TOTPOT erg/cm
+      - r_value            # REAL  SHARP R_VALUE Mx
+      - meanshr            # REAL  SHARP MEANSHR degrees
+      - totusjz            # REAL  SHARP TOTUSJZ A/m
+    environmental:
+      - coronal_hole_proximity  # REAL  0–1; null if unavailable
+      - coronal_hole_polarity   # INT   +1/-1; null if unavailable
+      - hcs_tilt_angle          # REAL  degrees; null if unavailable
+      - hcs_distance            # REAL  degrees; null if unavailable
+    ambient_l1:
+      - sw_speed_ambient   # REAL  km/s (6h pre-CME mean)
+      - sw_density_ambient # REAL  /cm³
+      - sw_bt_ambient      # REAL  nT
+      - f10_7              # REAL  sfu
+    quality:
+      - quality_flag       # INT   1–5; ≥3 usable for ML
+
+# -----------------------------------------------------------------------
+# flux_rope_fits — primary prediction target
+# -----------------------------------------------------------------------
+flux_rope_fits:
+  primary_key: event_id
+  foreign_key: event_id -> cme_events.event_id
+  columns:
+    - event_id                # TEXT
+    - observed_rotation_angle # REAL  degrees (PRIMARY PREDICTION TARGET)
+    - observed_bz_min         # REAL  nT (minimum Bz at L1)
+    - bz_polarity             # INT   +1/-1 (sign of Bz at ICME front)
+    - fit_method              # TEXT  "none"/"proxy"/"in_situ"
+    - fit_quality             # INT   1–5
+    - has_in_situ_fit         # INT   0/1 (1 = real L1 measurement)
+
+# -----------------------------------------------------------------------
+# l1_arrivals — L1 arrival and geomagnetic response
+# -----------------------------------------------------------------------
+l1_arrivals:
+  primary_key: event_id
+  foreign_key: event_id -> cme_events.event_id
+  columns:
+    - event_id              # TEXT
+    - shock_arrival_time    # TEXT  ISO 8601 UTC; null if not observed
+    - icme_start_time       # TEXT  ISO 8601 UTC
+    - icme_end_time         # TEXT  ISO 8601 UTC
+    - transit_time_hours    # REAL  hours Sun-to-L1
+    - dst_min_nT            # REAL  minimum Dst in 0–48h window
+    - kp_max                # REAL  maximum Kp in same window
+    - has_in_situ_fit       # INT   0/1
+
+# -----------------------------------------------------------------------
+# Validation query (checked by scripts/validate_db.py)
+# -----------------------------------------------------------------------
+validation:
+  three_table_join: |
+    SELECT e.event_id, e.cme_speed, f.observed_rotation_angle, a.transit_time_hours
+    FROM cme_events e
+    JOIN flux_rope_fits f ON e.event_id = f.event_id
+    JOIN l1_arrivals a ON e.event_id = a.event_id
+    WHERE e.quality_flag >= 3 AND a.has_in_situ_fit = 1
+  min_rows_quality3_insitu: 100
+  speed_range: [100, 3000]
+  required_columns:
+    - bz_gsm_not_applicable: "bz_gsm is in l1_arrivals as dst proxy; use dst_min_nT"

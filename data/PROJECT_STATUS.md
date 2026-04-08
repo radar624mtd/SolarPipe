@@ -2,7 +2,7 @@
 
 Last updated: 2026-04-08
 
-## Current Phase: Phase 5 — Cross-Matching (in progress)
+## Current Phase: Phase 6 — Synthetic & Export ✅ COMPLETE
 
 ### Live Data Run — COMPLETE (2026-04-07)
 
@@ -35,6 +35,21 @@ All tables populated. Final row counts:
 - DONKI endpoint: switched to `kauai.ccmc.gsfc.nasa.gov` (direct, no api_key, reliable)
 - `http_timeout_s`: 30→120 for large DONKI payloads
 - `scripts/run_live_ingest.py`: annual chunking for DONKI, full orchestration
+
+---
+
+## Phase 6 — Synthetic & Export ✅ COMPLETE
+
+Last updated: 2026-04-08
+
+- [x] **6.1** `synthetic/drag_model.py` — RK45 drag ODE; `propagate()` + `calibrate_gamma()` + `calibrate_from_db()`. 15 unit tests (test_drag_model.py). Two test bugs fixed (transit bound too tight; wind-speed comparison inverted).
+- [x] **6.2** `synthetic/rotation_model.py` — HCS alignment + coronal-hole deflection. `apply_rotation_corrections()` with null-fill when HCS/CH data absent. 10 unit tests (test_rotation_model.py).
+- [x] **6.3** `synthetic/monte_carlo.py` — log-normal speed, beta width, Iman-Conover speed↔flare correlation (r≈0.4). `sample_ensemble()`. Tests via enlil_emulator integration.
+- [x] **6.4** `synthetic/enlil_emulator.py` — composes drag + rotation + bias (8%) + Gaussian noise (4h σ). `emulate_event()` + `emulate_from_db()`. Parquet column schema matches C# ParquetProvider.
+- [x] **6.5** `export/parquet_export.py` — PyArrow writer; row groups ≤64 MB; atomic write (tmp+rename); file-level metadata (generated_at, seed, n_members, gamma). `build_parquet_from_db()`.
+- [x] **6.6** `export/sqlite_export.py` — `build_catalog()` assembles `cme_catalog.db` from `feature_vectors`; three output tables (cme_events, flux_rope_fits, l1_arrivals); column names match `flux_rope_propagation_v1.yaml` exactly; upsert idempotent (RULE-030).
+- [x] **6.7** `scripts/validate_db.py` — 8 checks; exit 0 on success. Three-table join, row count, speed range, dst_min_nT, schema, Parquet columns. `--min-rows` flag for CI.
+- [x] **6.8** `tests/integration/test_phase6_e2e.py` — 16 integration tests. Covers: seed staging DB → feature_vectors → emulate (n=10 members) → write Parquet → build catalog → validate. All in temp dir, no live network. 367 total tests passing (329 unit + 38 integration).
 
 ---
 
@@ -171,5 +186,5 @@ python scripts/port_solar_data.py \
 | 2 | CME & Flare Catalogs | CDAW, GOES flares, DONKI ancillary | Complete ✅ |
 | 3 | Solar Wind & Indices | SWPC, Kyoto Dst, Kp, F10.7 (incremental only — bulk ported) | Complete ✅ |
 | 4 | SHARP Features | JSOC DRMS client, 18 keywords, disk-passage filter | Complete ✅ |
-| 5 | Cross-Matching | CME↔Flare, CME↔ICME, feature assembly, quality flags | In progress |
-| 6 | Synthetic & Export | ENLIL emulator, Parquet export, cme_catalog.db, validation | Not started |
+| 5 | Cross-Matching | CME↔Flare, CME↔ICME, feature assembly, quality flags | Complete ✅ |
+| 6 | Synthetic & Export | ENLIL emulator, Parquet export, cme_catalog.db, validation | Complete ✅ |
