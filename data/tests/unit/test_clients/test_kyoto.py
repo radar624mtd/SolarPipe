@@ -56,13 +56,26 @@ class TestKyotoDstParser:
         records = _parse_dst_html("<html></html>", 2025, 4, "realtime")
         assert records == []
 
-    def test_pre_2019_date_is_unsupported(self):
-        """pre-2019 dates should return unsupported — logged, not parsed."""
-        # We can't fully test async client here, but we can test the date comparison
-        from datetime import date
-        from solarpipe_data.clients.kyoto import _HTML_CUTOFF
-        assert date(2018, 12, 1) < _HTML_CUTOFF
-        assert date(2019, 5, 1) >= _HTML_CUTOFF
+    def test_wdc_format_9999_sentinel(self):
+        """WDC format: 9999 value → None (missing data)."""
+        from solarpipe_data.clients.kyoto import _parse_wdc_format
+        # Build a line with 9999 in hour 5 (col 40-43)
+        base = "DST1001*01  X220   0" + "   5" * 5 + "9999" + "   5" * 18 + "   5"
+        records = _parse_wdc_format(base + "\n", 2010, 1, "final")
+        assert records[5]["dst_nt"] is None
+        assert records[4]["dst_nt"] == 5.0
+
+    def test_wdc_format_parses_pre_2019(self):
+        """WDC format parser supports pre-2019 data (no longer blocked)."""
+        from solarpipe_data.clients.kyoto import _parse_wdc_format
+        # Real Jan 2010 WDC format line
+        line = "DST1001*01  X220   0   5   4   4   2   0   0   2   2   2   0  -1   1   2   4   5   7   3   6  12  13  14  14  13  11   5"
+        records = _parse_wdc_format(line + "\n", 2010, 1, "final")
+        assert len(records) == 24
+        assert records[0]["dst_nt"] == 5.0   # hour 00: col 20-23 = '   5'
+        assert records[10]["dst_nt"] == -1.0  # hour 10: col 60-63 = '  -1'
+        assert records[0]["data_type"] == "final"
+        assert records[0]["datetime"] == "2010-01-01 00:00"
 
 
 @pytest.mark.unit
