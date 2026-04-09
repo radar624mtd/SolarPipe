@@ -174,6 +174,20 @@ public class DragBasedModelTests
     }
 
     [Fact]
+    public async Task PredictAsync_OutOfRangeSpeed_ProducesNaN()
+    {
+        // Batch mode: out-of-range speeds produce NaN rather than throwing,
+        // so a single bad row doesn't abort processing of 1900+ training events.
+        var model = new DragBasedModel(MakeDragConfig());
+        using var frame = MakeSpeedFrame([173f, 800f, 4000f]);
+
+        var result = await model.PredictAsync(frame, CancellationToken.None);
+        float.IsNaN(result.Values[0]).Should().BeTrue("173 km/s < 200 km/s limit → NaN");
+        result.Values[1].Should().BeInRange(30f, 100f, "800 km/s is valid → finite prediction");
+        float.IsNaN(result.Values[2]).Should().BeTrue("4000 km/s > 3500 km/s limit → NaN");
+    }
+
+    [Fact]
     public async Task PredictAsync_HyperparametersAreCaseInsensitive()
     {
         // RULE-012: OrdinalIgnoreCase — PascalCase keys must work same as snake_case
@@ -190,6 +204,81 @@ public class DragBasedModelTests
         var result = await model.PredictAsync(frame, CancellationToken.None);
         result.Values[0].Should().BeInRange(30f, 100f,
             "PascalCase hyperparameter keys must resolve correctly");
+    }
+
+    // --- YAML-style hyperparameter key aliases ---
+
+    [Fact]
+    public async Task PredictAsync_YamlStyleHyperparameterKeys_ResolveCorrectly()
+    {
+        // YAML uses drag_parameter (not gamma_km_inv), background_speed_km_s (not ambient_wind_km_s), etc.
+        // These must resolve to the same values — not silently fall through to defaults.
+        var yamlConfig = MakeDragConfig(new Dictionary<string, object>
+        {
+            ["drag_parameter"] = 0.2e-7,
+            ["background_speed_km_s"] = 400.0,
+            ["r_start_rs"] = 21.5,
+            ["r_stop_rs"] = 215.0
+        });
+        var codeConfig = MakeDragConfig(new Dictionary<string, object>
+        {
+            ["gamma_km_inv"] = 0.2e-7,
+            ["ambient_wind_km_s"] = 400.0,
+            ["start_distance_solar_radii"] = 21.5,
+            ["target_distance_solar_radii"] = 215.0
+        });
+
+        var yamlModel = new DragBasedModel(yamlConfig);
+        var codeModel = new DragBasedModel(codeConfig);
+
+        using var frame = MakeSpeedFrame([800f]);
+        var yamlResult = await yamlModel.PredictAsync(frame, CancellationToken.None);
+        var codeResult = await codeModel.PredictAsync(frame, CancellationToken.None);
+
+        yamlResult.Values[0].Should().BeApproximately(codeResult.Values[0], 0.01f,
+            "YAML-style and code-style hyperparameter keys must produce identical results");
+    }
+
+    [Fact]
+    public async Task PredictAsync_YamlDragParameter_NotIgnored()
+    {
+        // Verify that drag_parameter=0.2e-7 produces a DIFFERENT result than default 0.5e-7
+        var yamlConfig = MakeDragConfig(new Dictionary<string, object>
+        {
+            ["drag_parameter"] = 0.2e-7,
+            ["background_speed_km_s"] = 400.0,
+            ["r_start_rs"] = 21.5,
+            ["r_stop_rs"] = 215.0
+        });
+        var defaultConfig = MakeDragConfig(); // uses default gamma=0.5e-7
+
+        var yamlModel = new DragBasedModel(yamlConfig);
+        var defaultModel = new DragBasedModel(defaultConfig);
+
+        using var frame = MakeSpeedFrame([800f]);
+        var yamlResult = await yamlModel.PredictAsync(frame, CancellationToken.None);
+        var defaultResult = await defaultModel.PredictAsync(frame, CancellationToken.None);
+
+        Math.Abs(yamlResult.Values[0] - defaultResult.Values[0]).Should().BeGreaterThan(1.0f,
+            "drag_parameter=0.2e-7 vs default 0.5e-7 must produce materially different transit times");
+    }
+
+    // --- cme_speed_kms column name ---
+
+    [Fact]
+    public async Task PredictAsync_CmeSpeedKmsColumn_Resolves()
+    {
+        var model = new DragBasedModel(MakeDragConfig());
+
+        // Use cme_speed_kms as column name (as in training_features and YAML)
+        var schema = new DataSchema([new ColumnInfo("cme_speed_kms", ColumnType.Float, false)]);
+        using var frame = new InMemoryDataFrame(schema, [new[] { 800f }]);
+
+        var result = await model.PredictAsync(frame, CancellationToken.None);
+
+        result.Values.Should().HaveCount(1);
+        float.IsNaN(result.Values[0]).Should().BeFalse();
+        result.Values[0].Should().BeInRange(30f, 100f);
     }
 
     // --- SaveAsync / LoadAsync ---

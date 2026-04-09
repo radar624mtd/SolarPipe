@@ -133,8 +133,9 @@ public sealed class EndToEndPipelineTests : IDisposable
         foreach (var arg in args)
             psi.ArgumentList.Add(arg);
 
-        // Point registry at the isolated temp dir for this test run
+        // Point registry and cache at the isolated temp dir for this test run
         psi.Environment["SOLARPIPE_REGISTRY"] = _registryPath;
+        psi.Environment["SOLARPIPE_CACHE"] = Path.Combine(_workDir, "cache");
 
         using var proc = new Process { StartInfo = psi };
 

@@ -33,14 +33,14 @@ public sealed partial class InMemoryDataFrame
 
 internal sealed class DataFrameDataView : IDataView
 {
-    private readonly DataSchema _schema;
+    private readonly DataSchema _dataSchema;
     private readonly float[][] _data;
     private readonly int _rowCount;
     private readonly DataViewSchema _dvSchema;
 
     internal DataFrameDataView(DataSchema schema, float[][] data, int rowCount)
     {
-        _schema = schema;
+        _dataSchema = schema;
         _data = data;
         _rowCount = rowCount;
         _dvSchema = BuildDvSchema(schema);
@@ -52,10 +52,10 @@ internal sealed class DataFrameDataView : IDataView
     public long? GetRowCount() => _rowCount;
 
     public DataViewRowCursor GetRowCursor(IEnumerable<DataViewSchema.Column> columnsNeeded, Random? rand = null)
-        => new DataFrameCursor(_dvSchema, _data, _rowCount);
+        => new DataFrameCursor(_dvSchema, _dataSchema, _data, _rowCount);
 
     public DataViewRowCursor[] GetRowCursorSet(IEnumerable<DataViewSchema.Column> columnsNeeded, int n, Random? rand = null)
-        => [GetRowCursor(columnsNeeded, rand)];
+        => [GetRowCursor(columnsNeeded)];
 
     private static DataViewSchema BuildDvSchema(DataSchema schema)
     {
@@ -80,13 +80,15 @@ internal sealed class DataFrameDataView : IDataView
 internal sealed class DataFrameCursor : DataViewRowCursor
 {
     private readonly DataViewSchema _schema;
+    private readonly DataSchema _dataSchema;
     private readonly float[][] _data;
     private readonly int _rowCount;
     private long _position = -1;
 
-    internal DataFrameCursor(DataViewSchema schema, float[][] data, int rowCount)
+    internal DataFrameCursor(DataViewSchema schema, DataSchema dataSchema, float[][] data, int rowCount)
     {
         _schema = schema;
+        _dataSchema = dataSchema;
         _data = data;
         _rowCount = rowCount;
     }
@@ -105,7 +107,16 @@ internal sealed class DataFrameCursor : DataViewRowCursor
 
     public override ValueGetter<TValue> GetGetter<TValue>(DataViewSchema.Column column)
     {
-        int colIdx = column.Index;
+        // CRITICAL: use column NAME to find the data array, not column.Index.
+        // column.Index is the position in the ML.NET pipeline's IDataView schema, which
+        // was built at training time and may differ from the predict-time column order
+        // (e.g., when the predict input comes from a CSV with different column ordering).
+        // Matching by name ensures the correct float[] is returned regardless of order.
+        int colIdx = _dataSchema.IndexOf(column.Name);
+        if (colIdx < 0)
+            throw new InvalidOperationException(
+                $"DataFrameCursor.GetGetter: column '{column.Name}' not found in DataFrame schema. " +
+                $"Available columns: [{string.Join(", ", _dataSchema.Columns.Select(c => c.Name))}].");
         float[] colData = _data[colIdx];
 
         if (typeof(TValue) == typeof(float))

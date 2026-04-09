@@ -14,14 +14,16 @@ name: flux_rope_propagation_v1
 data_sources:
   cme_catalog:
     provider: sqlite
-    connection_string: data/cme_catalog.db
+    # Phase 6 output — produced by: cd data && python -m solarpipe_data crossmatch && export-sqlite
+    connection_string: "Data Source=data/data/output/cme_catalog.db"
     options:
-      table: cme_events
+      table: training_features   # flat JOIN view: cme_events + l1_arrivals + flux_rope_fits
       # sentinel values (9999.9, -1e31) converted to NaN at load time (RULE-120)
 
   enlil_ensemble:
     provider: parquet
-    connection_string: data/enlil_ensemble.parquet
+    # Phase 6 output — produced by: python -m solarpipe_data export-parquet
+    connection_string: data/data/output/enlil_runs/enlil_ensemble_v1.parquet
     # Row groups ≤64 MB; safe disposal via using (RULE-050, ADR-005)
 
 stages:
@@ -30,12 +32,12 @@ stages:
     model_type: DragBased
     data_source: cme_catalog
     features:
-      - radial_speed_km_s
-    target: transit_hours_observed
+      - cme_speed_kms          # coronagraph plane-of-sky speed (km/s)
+    target: transit_time_hours
     hyperparameters:
       # Drag parameter γ (cm^-1) — O'Brien & McPherron 2000 central value
       drag_parameter: 0.2e-7
-      # Background solar wind speed (km/s)
+      # Background solar wind speed (km/s) — use sw_speed_ambient_kms from catalog if available
       background_speed_km_s: 400.0
       # Integration start/stop radii (solar radii)
       r_start_rs: 21.5
@@ -46,11 +48,17 @@ stages:
     model_type: FastForest
     data_source: cme_catalog
     features:
-      - radial_speed_km_s
-      - bz_gsm_nt
-      - solar_wind_density_n_cc
-      - drag_baseline_residual_hours
-    target: transit_hours_observed
+      - cme_speed_kms           # coronagraph speed (km/s)
+      - bz_gsm_proxy_nt         # Dst-proxy Bz min (nT); real in-situ fit deferred (flux_rope_fits.observed_rotation_angle)
+      - sw_density_n_cc         # ambient solar wind proton density (n/cc)
+      - sw_speed_ambient_kms    # ambient solar wind speed at L1 (km/s)
+      - delta_v_kms             # computed: cme_speed_kms - sw_speed_ambient_kms (drag differential)
+      - sw_bt_nt                # total interplanetary magnetic field magnitude (nT)
+      - speed_ratio             # computed: cme_speed_kms / sw_speed_ambient_kms (dimensionless)
+      - speed_x_bz              # interaction: cme_speed_kms * bz_gsm_proxy_nt (speed×field coupling)
+      - speed_x_density          # interaction: cme_speed_kms * sw_density_n_cc (momentum flux proxy)
+      # f10_7 excluded: all 2012 rows have NULL in current catalog (Phase 6 deferred)
+    target: transit_time_hours
     mock_data_strategy: residual_calibration
     hyperparameters:
       number_of_trees: 100

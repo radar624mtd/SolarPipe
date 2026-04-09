@@ -298,6 +298,36 @@ def build_catalog(
 
             session.commit()
 
+        # Create training_features view for the .NET pipeline — JOINs the 3 output
+        # tables and aliases columns to match configs/flux_rope_propagation_v1.yaml
+        with output_engine.connect() as conn:
+            conn.execute(sa.text("DROP VIEW IF EXISTS training_features"))
+            conn.execute(sa.text("""
+                CREATE VIEW training_features AS
+                SELECT
+                    e.event_id,
+                    e.launch_time,
+                    e.cme_speed          AS cme_speed_kms,
+                    e.sw_speed_ambient   AS sw_speed_ambient_kms,
+                    e.sw_density_ambient AS sw_density_n_cc,
+                    e.sw_bt_ambient      AS sw_bt_nt,
+                    e.f10_7,
+                    e.quality_flag,
+                    f.observed_bz_min    AS bz_gsm_proxy_nt,
+                    a.transit_time_hours,
+                    a.dst_min_nT         AS dst_min_nT,
+                    a.kp_max,
+                    a.has_in_situ_fit
+                FROM cme_events e
+                JOIN l1_arrivals a ON e.event_id = a.event_id
+                JOIN flux_rope_fits f ON e.event_id = f.event_id
+                WHERE a.transit_time_hours IS NOT NULL
+                  AND e.cme_speed IS NOT NULL
+                  AND e.quality_flag >= 2
+                  AND e.launch_time < '2026-01-01'
+            """))
+            conn.commit()
+
     finally:
         staging_engine.dispose()
         output_engine.dispose()

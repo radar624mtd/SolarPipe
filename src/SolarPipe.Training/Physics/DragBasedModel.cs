@@ -50,7 +50,7 @@ public sealed class DragBasedModel : ITrainedModel
     // Runs ODE per row. Reads radial_speed_km_s column; outputs arrival_time_hours.
     public Task<PredictionResult> PredictAsync(IDataFrame input, CancellationToken ct)
     {
-        var speedCol = FindColumn(input, "radial_speed_km_s", "v0_km_s", "speed_km_s");
+        var speedCol = FindColumn(input, "radial_speed_km_s", "v0_km_s", "speed_km_s", "cme_speed_kms");
         float[] speeds = input.GetColumn(speedCol);
 
         var results = new float[speeds.Length];
@@ -65,10 +65,14 @@ public sealed class DragBasedModel : ITrainedModel
                 continue;
             }
 
-            // RULE-032: validate input speed
+            // RULE-032: speeds outside physical range produce NaN (not throw) in batch mode.
+            // Slow CMEs (<200 km/s) and extremely fast events (>3500 km/s) cannot be integrated
+            // by this ODE — propagate as missing rather than aborting the whole batch.
             if (v0 < 200f || v0 > 3500f)
-                throw new ArgumentOutOfRangeException("radial_speed_km_s",
-                    $"Speed {v0} km/s outside valid range [200, 3500] at row {i} (stage={StageName}).");
+            {
+                results[i] = float.NaN;
+                continue;
+            }
 
             var (_, arrivalHours) = RunOde(v0, _ambientWindKmPerSec, _gammaKmInv,
                 _startDistanceSolarRadii, _targetDistanceSolarRadii);
@@ -209,19 +213,22 @@ public sealed class DragBasedModel : ITrainedModel
 
     private void ExtractHyperparameters(IReadOnlyDictionary<string, object>? hp)
     {
-        _gammaKmInv = FindHyperValue(hp, "gamma_km_inv", 0.5e-7);
-        _ambientWindKmPerSec = FindHyperValue(hp, "ambient_wind_km_s", 400.0);
-        _startDistanceSolarRadii = FindHyperValue(hp, "start_distance_solar_radii", 21.5);
-        _targetDistanceSolarRadii = FindHyperValue(hp, "target_distance_solar_radii", 215.0);
+        _gammaKmInv = FindHyperValue(hp, 0.5e-7, "gamma_km_inv", "drag_parameter");
+        _ambientWindKmPerSec = FindHyperValue(hp, 400.0, "ambient_wind_km_s", "background_speed_km_s");
+        _startDistanceSolarRadii = FindHyperValue(hp, 21.5, "start_distance_solar_radii", "r_start_rs");
+        _targetDistanceSolarRadii = FindHyperValue(hp, 215.0, "target_distance_solar_radii", "r_stop_rs");
     }
 
-    // RULE-012: OrdinalIgnoreCase lookup for hyperparameter maps
-    private static double FindHyperValue(IReadOnlyDictionary<string, object>? hp, string key, double defaultValue)
+    // RULE-012: OrdinalIgnoreCase lookup for hyperparameter maps.
+    // Accepts multiple candidate keys to support both code-style and YAML-style naming.
+    private static double FindHyperValue(
+        IReadOnlyDictionary<string, object>? hp, double defaultValue, params string[] keys)
     {
         if (hp == null) return defaultValue;
-        foreach (var kvp in hp)
-            if (string.Equals(kvp.Key, key, StringComparison.OrdinalIgnoreCase))
-                return Convert.ToDouble(kvp.Value);
+        foreach (var key in keys)
+            foreach (var kvp in hp)
+                if (string.Equals(kvp.Key, key, StringComparison.OrdinalIgnoreCase))
+                    return Convert.ToDouble(kvp.Value);
         return defaultValue;
     }
 

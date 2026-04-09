@@ -105,12 +105,17 @@ async def ingest(source: str, start: str, end: str) -> None:
 
 
 @cli.command()
-@click.option("--start", default=None, help="Start date YYYY-MM-DD (optional)")
-@click.option("--end", default=None, help="End date YYYY-MM-DD (optional)")
-@run_async
-async def crossmatch(start: str | None, end: str | None) -> None:
-    """Run all CME↔flare and CME↔ICME matchers."""
-    click.echo("crossmatch not yet implemented (Phase 5)")
+@click.option("--start", default=None, help="Start date YYYY-MM-DD (optional, not yet used)")
+@click.option("--end", default=None, help="End date YYYY-MM-DD (optional, not yet used)")
+def crossmatch(start: str | None, end: str | None) -> None:
+    """Run all CME↔flare and CME↔ICME matchers and populate feature_vectors."""
+    import logging
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s %(message)s")
+    settings = get_settings()
+    click.echo(f"Running feature assembly against {settings.staging_db_path}")
+    from solarpipe_data.crossmatch.feature_assembler import run_feature_assembly
+    n = run_feature_assembly(settings.staging_db_path)
+    click.echo(f"crossmatch complete: {n} feature vectors written")
 
 
 @cli.command()
@@ -124,6 +129,40 @@ async def build(start: str, no_fetch: bool) -> None:
         ctx.invoke(fetch, source="donki-cme", start=start, end="today", force=False)
     ctx.invoke(ingest, source="donki-cme", start=start, end="today")
     ctx.invoke(crossmatch, start=start, end=None)
+
+
+@cli.command("export-sqlite")
+@click.option("--output", default=None, help="Output path for cme_catalog.db (default: settings.output_db_path)")
+@click.option("--min-quality", default=1, show_default=True, help="Minimum quality_flag to export")
+def export_sqlite(output: str | None, min_quality: int) -> None:
+    """Export feature_vectors → cme_catalog.db (three output tables)."""
+    import logging
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s %(message)s")
+    settings = get_settings()
+    out = output or settings.output_db_path
+    click.echo(f"Exporting SQLite catalog → {out} (min_quality={min_quality})")
+    from solarpipe_data.export.sqlite_export import build_catalog
+    n = build_catalog(settings.staging_db_path, out, min_quality=min_quality)
+    click.echo(f"export-sqlite complete: {n} events written")
+
+
+@cli.command("export-parquet")
+@click.option("--output", default=None, help="Output path for Parquet file")
+@click.option("--min-quality", default=3, show_default=True, help="Minimum quality_flag to include")
+@click.option("--n-members", default=50, show_default=True, help="Ensemble members per event")
+@click.option("--seed", default=42, show_default=True, help="Random seed for reproducibility")
+def export_parquet(output: str | None, min_quality: int, n_members: int, seed: int) -> None:
+    """Export ENLIL ensemble simulation → Parquet file."""
+    import logging
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s %(message)s")
+    settings = get_settings()
+    out = output or str(Path(settings.output_db_path).parent / "enlil_runs" / "enlil_ensemble_v1.parquet")
+    click.echo(f"Exporting ENLIL Parquet → {out} (n_members={n_members}, seed={seed}, min_quality={min_quality})")
+    from solarpipe_data.export.parquet_export import build_parquet_from_db
+    from solarpipe_data.synthetic.enlil_emulator import EmulatorConfig
+    cfg = EmulatorConfig(n_members=n_members, seed=seed)
+    n = build_parquet_from_db(settings.staging_db_path, out, config=cfg, min_quality=min_quality)
+    click.echo(f"export-parquet complete: {n} rows written")
 
 
 @cli.command()

@@ -179,6 +179,22 @@ Silent failures if violated — read full context in `DEVELOPMENT_RULES.md`:
 | RULE-130 | Coordinate vectors use typed structs — no bare floats (GSE/GSM) |
 | RULE-150 (ext) | LongRunning lives in the adapter — commands must NOT add a second `Task.Factory.StartNew` wrapper |
 
+## Active Implementation Plan
+
+**Plan**: "SolarPipe: Dataset Gaps, Checkpointing, Validation & Documentation"
+**Location**: `C:\Users\radar\.claude\plans\serialized-frolicking-book.md`
+
+**Status** (2026-04-08):
+- Step 0 (CLI audit): Done
+- Step 1 (Phase 6 data pipeline): Done — 9,413 feature vectors, cme_catalog.db + enlil_ensemble_v1.parquet produced
+- Step 2 (YAML config update): Done — `configs/flux_rope_propagation_v1.yaml` updated
+- Step 3 (Checkpointing ADR-015): Done — CheckpointManager + TrainCommand + 10 unit tests; 292 tests passing
+- Step 4 (Validation runner): Done — EventValidator + ValidateEventsCommand + 9 unit tests; 304 tests passing
+- Step 4b (Improvements): Done — 3 bugs fixed + 2 improvements; rf_correction RMSE 21.0→18.4h; SolarPipe MAE=10.0h, skill=0.33 vs DBM
+- Step 5 (docs/GUIDE.md): Pending
+
+**Test baseline**: 304 (260 unit + 41 integration + 3 pipeline), 0 failures
+
 ## Project Documentation Index
 
 | Document | Purpose | When to Read |

@@ -7,6 +7,7 @@ using SolarPipe.Data.Providers;
 using SolarPipe.Host;
 using SolarPipe.Host.Commands;
 using SolarPipe.Training.Adapters;
+using SolarPipe.Training.Checkpoint;
 using SolarPipe.Training.Registry;
 
 namespace SolarPipe.Tests.Integration;
@@ -23,6 +24,7 @@ public sealed class CliCommandTests : IDisposable
     private readonly DataSourceRegistry _dataRegistry;
     private readonly IReadOnlyList<IFrameworkAdapter> _adapters;
     private readonly IModelRegistry _modelRegistry;
+    private readonly CheckpointManager _checkpoints;
 
     public CliCommandTests()
     {
@@ -45,6 +47,7 @@ public sealed class CliCommandTests : IDisposable
         _adapters = new IFrameworkAdapter[] { new MlNetAdapter() };
         _modelRegistry = new FileSystemModelRegistry(_registryPath);
         _loader = new PipelineConfigLoader();
+        _checkpoints = new CheckpointManager(Path.Combine(_workDir, "cache"));
     }
 
     public void Dispose()
@@ -79,7 +82,7 @@ public sealed class CliCommandTests : IDisposable
     [Fact]
     public async Task TrainCommand_SingleStage_RegistersModel()
     {
-        var sut = new TrainCommand(_loader, _dataRegistry, _adapters, _modelRegistry);
+        var sut = new TrainCommand(_loader, _dataRegistry, _adapters, _modelRegistry, _checkpoints);
 
         var exit = await sut.ExecuteAsync(["--config", _configPath], CancellationToken.None);
 
@@ -96,7 +99,7 @@ public sealed class CliCommandTests : IDisposable
     public async Task PredictCommand_AfterTrain_WritesJsonOutput()
     {
         // Arrange — train first so registry has a model
-        var trainCmd = new TrainCommand(_loader, _dataRegistry, _adapters, _modelRegistry);
+        var trainCmd = new TrainCommand(_loader, _dataRegistry, _adapters, _modelRegistry, _checkpoints);
         var trainExit = await trainCmd.ExecuteAsync(["--config", _configPath], CancellationToken.None);
         trainExit.Should().Be(ExitCodes.Success, "train must succeed before predict");
 

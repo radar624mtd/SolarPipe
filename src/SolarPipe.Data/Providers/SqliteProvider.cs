@@ -45,8 +45,12 @@ public sealed class SqliteProvider : IDataSourceProvider
         using var conn = new SqliteConnection(config.ConnectionString);
         await conn.OpenAsync(ct);
 
-        var schema = await DiscoverSchemaAsync(config, ct);
-        var sql = BuildQuery(config, query, schema);
+        // RULE-002: derive schema from the actual query result, not PRAGMA table_info.
+        // When the caller passes an explicit SQL (e.g. SELECT col1, col2 FROM t), the
+        // result set may be a subset of the table schema — PRAGMA would return the full
+        // table, causing column-index-out-of-range on the reader.
+        var fullSchema = await DiscoverSchemaAsync(config, ct);
+        var sql = BuildQuery(config, query, fullSchema);
 
         using var cmd = conn.CreateCommand();
         cmd.CommandText = sql;
@@ -54,24 +58,33 @@ public sealed class SqliteProvider : IDataSourceProvider
 
         using var reader = await cmd.ExecuteReaderAsync(ct);
 
+        // Build result schema from actual reader columns (may be a subset of the table)
+        var resultCols = Enumerable.Range(0, reader.FieldCount)
+            .Select(i => new ColumnInfo(
+                reader.GetName(i),
+                InferColumnType(reader.GetDataTypeName(i).ToUpperInvariant()),
+                IsNullable: true))
+            .ToList();
+        var resultSchema = new DataSchema(resultCols);
+
         // Buffer rows; space weather datasets are << 1M rows in Phase 1
-        var columnBuffers = new List<float>[schema.Columns.Count];
+        var columnBuffers = new List<float>[resultSchema.Columns.Count];
         for (int i = 0; i < columnBuffers.Length; i++)
             columnBuffers[i] = new List<float>();
 
         while (await reader.ReadAsync(ct))
         {
-            for (int col = 0; col < schema.Columns.Count; col++)
+            for (int col = 0; col < resultSchema.Columns.Count; col++)
             {
                 float value = reader.IsDBNull(col)
                     ? float.NaN
-                    : ToFloat(reader.GetValue(col), schema.Columns[col]);
+                    : ToFloat(reader.GetValue(col), resultSchema.Columns[col]);
                 columnBuffers[col].Add(value);
             }
         }
 
         var data = columnBuffers.Select(b => b.ToArray()).ToArray();
-        return new DataFrame.InMemoryDataFrame(schema, data);
+        return new DataFrame.InMemoryDataFrame(resultSchema, data);
     }
 
     // --- helpers ---

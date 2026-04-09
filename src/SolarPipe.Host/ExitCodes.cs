@@ -9,4 +9,5 @@ public static class ExitCodes
     public const int InspectFailed = 4;
     public const int UnknownCommand = 5;
     public const int MissingArguments = 6;
+    public const int CheckpointCorrupt = 7;
 }

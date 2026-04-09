@@ -4,6 +4,7 @@ using Microsoft.ML;
 using SolarPipe.Core.Interfaces;
 using SolarPipe.Core.Models;
 using SolarPipe.Training.Adapters;
+using SolarPipe.Training.Physics;
 
 namespace SolarPipe.Training.Registry;
 
@@ -211,11 +212,17 @@ public sealed class FileSystemModelRegistry : IModelRegistry, IDisposable
         return artifact.Config.Framework switch
         {
             "mlnet" or "MlNet" or "ml.net" => LoadMlNetModel(artifact),
+            "Physics" or "physics" => LoadPhysicsModel(artifact),
             _ => throw new NotSupportedException(
                 $"Cannot load model for framework '{artifact.Config.Framework}'. " +
                 $"ModelId: '{artifact.ModelId}', Version: '{artifact.Version}'. " +
-                $"Supported: mlnet")
+                $"Supported: mlnet, Physics")
         };
+    }
+
+    private static ITrainedModel LoadPhysicsModel(ModelArtifact artifact)
+    {
+        return DragBasedModel.FromFile(artifact.ArtifactPath);
     }
 
     private static MlNetTrainedModel LoadMlNetModel(ModelArtifact artifact)

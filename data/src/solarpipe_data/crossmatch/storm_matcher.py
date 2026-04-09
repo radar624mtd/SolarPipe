@@ -48,16 +48,46 @@ def _parse_dt(ts: str | None) -> datetime | None:
         return None
 
 
-def find_storm_response(
-    icme_arrival_time: str | None,
-    dst_rows: list[dict[str, Any]],
-    kp_rows: list[dict[str, Any]],
-) -> dict[str, Any]:
-    """Find Dst min and Kp max in the 0–48 h window after ICME arrival.
+def _build_indexed_series(
+    rows: list[dict[str, Any]],
+    dt_key: str,
+    val_key: str,
+) -> list[tuple[datetime, float]]:
+    """Pre-parse datetimes and drop None values → sorted list of (dt, value).
 
-    dst_rows / kp_rows: pre-loaded dicts with 'datetime', 'dst_nt', 'kp' keys.
-    L1 lag: arrival_time is L1 passage → add 45 min to get Earth arrival.
+    Parsing once here avoids O(n*m) repeated _parse_dt() calls in the inner loop.
     """
+    out: list[tuple[datetime, float]] = []
+    for r in rows:
+        val = r.get(val_key)
+        if val is None:
+            continue
+        dt = _parse_dt(r.get(dt_key))
+        if dt is None:
+            continue
+        out.append((dt, float(val)))
+    out.sort(key=lambda t: t[0])
+    return out
+
+
+def _window_slice(
+    series: list[tuple[datetime, float]],
+    window_start: datetime,
+    window_end: datetime,
+) -> list[tuple[datetime, float]]:
+    """Binary-search slice of a sorted (dt, value) list within [start, end]."""
+    import bisect
+    lo = bisect.bisect_left(series, (window_start, float("-inf")))
+    hi = bisect.bisect_right(series, (window_end, float("inf")))
+    return series[lo:hi]
+
+
+def find_storm_response_indexed(
+    icme_arrival_time: str | None,
+    dst_series: list[tuple[datetime, float]],
+    kp_series: list[tuple[datetime, float]],
+) -> dict[str, Any]:
+    """Find Dst min / Kp max in 0–48 h window. Uses pre-parsed, sorted series."""
     result: dict[str, Any] = {
         "dst_min_nt": None,
         "dst_min_time": None,
@@ -69,37 +99,34 @@ def find_storm_response(
     if arrival_dt is None:
         return result
 
-    # Shift L1 timestamp to Earth
     earth_arrival = arrival_dt + _L1_LAG
     window_start = earth_arrival + _WINDOW_START
     window_end = earth_arrival + _WINDOW_END
 
-    # --- Dst minimum ---
-    dst_in_window = [
-        r for r in dst_rows
-        if r.get("dst_nt") is not None
-        and _parse_dt(r.get("datetime")) is not None
-        and window_start <= _parse_dt(r["datetime"]) <= window_end  # type: ignore[arg-type]
-    ]
+    dst_window = _window_slice(dst_series, window_start, window_end)
+    if dst_window:
+        best_dt, best_val = min(dst_window, key=lambda t: t[1])
+        result["dst_min_nt"] = best_val
+        result["dst_min_time"] = best_dt.isoformat()
+        result["storm_threshold_met"] = best_val < _DST_STORM_THRESHOLD
 
-    if dst_in_window:
-        best = min(dst_in_window, key=lambda r: r["dst_nt"])
-        result["dst_min_nt"] = best["dst_nt"]
-        result["dst_min_time"] = best["datetime"]
-        result["storm_threshold_met"] = best["dst_nt"] < _DST_STORM_THRESHOLD
-
-    # --- Kp maximum ---
-    kp_in_window = [
-        r for r in kp_rows
-        if r.get("kp") is not None
-        and _parse_dt(r.get("datetime")) is not None
-        and window_start <= _parse_dt(r["datetime"]) <= window_end  # type: ignore[arg-type]
-    ]
-
-    if kp_in_window:
-        result["kp_max"] = max(r["kp"] for r in kp_in_window)
+    kp_window = _window_slice(kp_series, window_start, window_end)
+    if kp_window:
+        result["kp_max"] = max(v for _, v in kp_window)
 
     return result
+
+
+# Keep original for backwards compatibility with tests
+def find_storm_response(
+    icme_arrival_time: str | None,
+    dst_rows: list[dict[str, Any]],
+    kp_rows: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Compatibility wrapper — builds indexed series then delegates."""
+    dst_series = _build_indexed_series(dst_rows, "datetime", "dst_nt")
+    kp_series = _build_indexed_series(kp_rows, "datetime", "kp")
+    return find_storm_response_indexed(icme_arrival_time, dst_series, kp_series)
 
 
 # ---------------------------------------------------------------------------
@@ -130,12 +157,16 @@ def run_storm_matching(
         len(dst_rows), len(kp_rows),
     )
 
+    # Pre-parse once — avoids O(n*m) datetime parsing in the inner loop
+    dst_series = _build_indexed_series(dst_rows, "datetime", "dst_nt")
+    kp_series = _build_indexed_series(kp_rows, "datetime", "kp")
+
     results: dict[str, dict[str, Any]] = {}
     storm_count = 0
 
     for activity_id, icme_m in icme_matches.items():
         arrival = icme_m.get("icme_arrival_time")
-        storm = find_storm_response(arrival, dst_rows, kp_rows)
+        storm = find_storm_response_indexed(arrival, dst_series, kp_series)
         results[activity_id] = storm
         if storm.get("storm_threshold_met"):
             storm_count += 1
