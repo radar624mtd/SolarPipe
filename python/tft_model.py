@@ -388,6 +388,7 @@ class TFTTrainer:
         n_folds: int = 5,
         gap_days: int = 14,
         device: str = "cpu",
+        patience: int = 20,
     ) -> None:
         self.model_kwargs = model_kwargs
         self.epochs = epochs
@@ -396,6 +397,7 @@ class TFTTrainer:
         self.n_folds = n_folds
         self.gap_days = gap_days
         self.device = torch.device(device)
+        self.patience = patience  # early stopping patience in epochs
         self.q_loss = QuantileLoss(TransitTimeTFT.QUANTILES).to(self.device)
 
     def _asymmetric_weight(self, preds_p50: torch.Tensor,
@@ -425,6 +427,7 @@ class TFTTrainer:
         N_train = train_data["target"].shape[0]
         best_val = float("inf")
         best_state = None
+        patience_counter = 0
 
         for epoch in range(1, self.epochs + 1):
             if ct_event.is_set():
@@ -474,8 +477,15 @@ class TFTTrainer:
             if val_loss < best_val:
                 best_val = val_loss
                 best_state = {k: v.cpu().clone() for k, v in model.state_dict().items()}
+                patience_counter = 0
+            else:
+                patience_counter += 1
 
             progress_cb(epoch, train_loss, val_loss)
+
+            if patience_counter >= self.patience:
+                progress_cb(epoch, train_loss, val_loss)  # ensure final state logged
+                break
 
         if best_state is not None:
             model.load_state_dict(best_state)
