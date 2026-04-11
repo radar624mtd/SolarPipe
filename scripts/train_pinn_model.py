@@ -47,27 +47,40 @@ GAMMA0_DEFAULT = 2.2974e-8   # km⁻¹, from M8 refined calibration
 
 # Feature columns to pass to LightGBM (NaN-tolerant; categorical handled separately)
 NUMERIC_FEATURES = [
-    # Stage 1 — Regime
+    # Stage 1 — Regime (OMNI 24h, expanded)
     "omni_24h_bz_mean", "omni_24h_bz_std", "omni_24h_bz_min",
     "omni_24h_speed_mean", "omni_24h_density_mean", "omni_24h_pressure_mean",
     "omni_24h_ae_max", "omni_24h_dst_min", "omni_24h_kp_max",
+    "omni_24h_bx_mean", "omni_24h_by_mean", "omni_24h_bz_sigma",
+    "omni_24h_efield_mean", "omni_24h_plasma_beta_mean",
+    "omni_24h_alfven_mach_mean", "omni_24h_ms_mach_mean",
     "f10_7",
+    # Cluster labels (k=5, k=8, k=12 — LightGBM treats as numeric)
+    "cluster_id_k5", "cluster_id_k8", "cluster_id_k12",
     # Stage 2 — Interaction
     "preceding_cme_count_48h", "preceding_cme_speed_max", "preceding_cme_speed_mean",
     "preceding_cme_angular_sep_min", "is_multi_cme",
     "omni_48h_density_spike_max", "omni_48h_speed_gradient",
-    # Stage 3 — Physics
+    # Stage 3 — Physics / CME geometry
     "cme_speed_kms", "cme_half_angle_deg", "cme_latitude", "cme_longitude",
-    "cme_angular_width_deg", "cdaw_linear_speed_kms",
+    "cme_angular_width_deg",
+    # CDAW kinematics (expanded)
+    "cdaw_linear_speed_kms", "cdaw_angular_width_deg",
     "cdaw_mass_log10", "cdaw_ke_log10", "cdaw_matched",
+    "cdaw_2nd_speed_init", "cdaw_2nd_speed_final", "cdaw_2nd_speed_20rs", "cdaw_accel_kms2",
+    # Flare
     "has_flare", "flare_class_numeric", "flare_source_longitude",
+    # OMNI 150h + ambient
     "omni_150h_density_median", "omni_150h_speed_median",
     "sw_bz_ambient", "delta_v_kms",
+    # SHARP magnetic parameters (18 fields)
     "sharp_available", "usflux",
-    # Cluster label (ordinal, LightGBM treats as numeric)
-    "cluster_id_k5",
-    # Engineered
-    "transit_physics",   # added below
+    "meangam", "meangbt", "meangbz", "meangbh",
+    "meanjzd", "totusjz", "meanalp", "meanjzh", "totusjh",
+    "absnjzh", "savncpp", "meanpot", "totpot", "meanshr",
+    "shrgt45", "r_value", "area_acr",
+    # Physics prior (engineered, added below)
+    "transit_physics",
 ]
 
 CATEGORICAL_FEATURES: list[str] = []   # cluster_id handled as numeric
@@ -220,6 +233,9 @@ def main() -> int:
                     help="Train on raw transit time, not physics residual")
     ap.add_argument("--n-folds", type=int, default=5,
                     help="Number of temporal CV folds (default 5)")
+    ap.add_argument("--write-oof-preds", action="store_true",
+                    help="Save out-of-fold predictions for training events + all holdout "
+                         "predictions into pinn_v1_results.json (required for TFT ensemble)")
     args = ap.parse_args()
 
     OUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -267,6 +283,8 @@ def main() -> int:
     folds = temporal_folds(train_rows, args.n_folds)
     cv_maes = []
     cv_physics_maes = []
+    # OOF predictions: index → predicted transit hours (last fold wins for overlapping indices)
+    oof_preds: dict[int, float] = {}
 
     for fold_i, (tr_idx, val_idx) in enumerate(folds):
         X_tr  = X_train_full.iloc[tr_idx]
@@ -290,6 +308,10 @@ def main() -> int:
         cv_maes.append(fold_mae)
         cv_physics_maes.append(phys_only_mae)
         print(f"    fold {fold_i+1}: n_val={len(val_idx)} | physics MAE={phys_only_mae:.2f}h | model MAE={fold_mae:.2f}h | Δ={fold_mae-phys_only_mae:+.2f}h")
+
+        if args.write_oof_preds:
+            for row_pos, orig_idx in enumerate(val_idx):
+                oof_preds[orig_idx] = float(pred_transit[row_pos])
 
     print(f"  CV MAE mean: {np.mean(cv_maes):.2f}h ± {np.std(cv_maes):.2f}h")
     print(f"  CV physics MAE mean: {np.mean(cv_physics_maes):.2f}h")
@@ -377,6 +399,36 @@ def main() -> int:
         "ccmc_4event": ccmc_rows_out,
         "feature_importance": [(f, int(i)) for f, i in fi],
     }
+
+    if args.write_oof_preds:
+        # OOF predictions for training events (keyed by activity_id)
+        oof_list = [
+            {
+                "activity_id": train_rows[orig_idx]["activity_id"],
+                "truth": float(y_train_raw[orig_idx]),
+                "predicted": float(oof_pred),
+                "split": "train",
+            }
+            for orig_idx, oof_pred in sorted(oof_preds.items())
+        ]
+        oof_coverage = len(oof_preds)
+        print(f"\n  OOF coverage: {oof_coverage}/{len(train_rows)} training events "
+              f"({100*oof_coverage/len(train_rows):.1f}%)")
+        results["oof_predictions"] = oof_list
+
+        # Full holdout predictions (all events, not just CCMC 4)
+        holdout_list = [
+            {
+                "activity_id": holdout_rows[i]["activity_id"],
+                "truth": float(y_hold_raw[i]),
+                "predicted": float(pred_hold[i]),
+                "split": "holdout",
+            }
+            for i in range(len(holdout_rows))
+        ]
+        results["holdout_predictions"] = holdout_list
+        print(f"  Holdout predictions: {len(holdout_list)} events")
+
     with open(OUT_DIR / "pinn_v1_results.json", "w") as f:
         json.dump(results, f, indent=2)
 
