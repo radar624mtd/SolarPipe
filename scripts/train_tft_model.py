@@ -94,8 +94,14 @@ SEQ_CHANNELS = [
 # Existing model predictions (ensemble head inputs)
 EXISTING_PRED_COLS = ["phase8_pred_transit_hours", "pinn_v1_pred_transit_hours"]
 
-N_STATIC = len(STATIC_FEATURES)
-N_SEQ_CH = len(SEQ_CHANNELS)
+N_STATIC_BASE = len(STATIC_FEATURES)
+N_EXTRA_STATIC = 8   # from compute_expanded_static (log-transforms, interactions)
+N_STATIC = N_STATIC_BASE + N_EXTRA_STATIC
+
+N_SEQ_CH_BASE = len(SEQ_CHANNELS)
+N_DERIV_CH = 24      # 8 channels × 3 derivative orders
+N_SEQ_CH = N_SEQ_CH_BASE + N_DERIV_CH   # 20 + 24 = 44
+
 N_EXISTING = len(EXISTING_PRED_COLS)
 PRE_LEN = 150
 TRANSIT_LEN = 72
@@ -265,6 +271,119 @@ def load_sequences(split: str, activity_ids: list[str]) -> tuple[np.ndarray, np.
     return pre_arr, transit_arr, transit_mask
 
 
+def compute_sequence_derivatives(seq: np.ndarray) -> np.ndarray:
+    """Append 1st, 2nd, and 3rd finite-difference derivatives to sequence channels.
+
+    Input:  (N, T, C)  float32 — original OMNI channels
+    Output: (N, T, C + 3*D) float32 — original + derivatives for D key channels
+
+    Derivative channels computed for: Bz_GSM(0), flow_speed(1), proton_density(2),
+    flow_pressure(3), AE_nT(4), Dst_nT(5), B_scalar_avg(7), By_GSM(8)
+    — 8 channels × 3 orders = 24 extra channels → total C+24
+
+    NaN-safe: differences skip NaN positions (filled with NaN, imputed later).
+    """
+    DERIV_INDICES = [0, 1, 2, 3, 4, 5, 7, 8]  # indices in SEQ_CHANNELS
+    N, T, C = seq.shape
+    D = len(DERIV_INDICES)
+
+    out = np.full((N, T, C + 3 * D), float("nan"), dtype=np.float32)
+    out[:, :, :C] = seq  # copy originals
+
+    for order in range(1, 4):
+        col_offset = C + (order - 1) * D
+        for d_pos, ch_idx in enumerate(DERIV_INDICES):
+            s = seq[:, :, ch_idx]  # (N, T)
+            deriv = np.full_like(s, float("nan"))
+            if order == 1:
+                deriv[:, 1:] = s[:, 1:] - s[:, :-1]
+            elif order == 2:
+                if T > 2:
+                    deriv[:, 1:-1] = s[:, 2:] - 2 * s[:, 1:-1] + s[:, :-2]
+            elif order == 3:
+                if T > 3:
+                    deriv[:, 2:-1] = (s[:, 3:] - 2 * s[:, 2:-1] + 2 * s[:, :-3] - s[:, :-4]
+                                      if T > 4 else deriv[:, 2:-1])
+                    # Simpler 3rd order: d3/dt3 ≈ d2[n]-d2[n-1]
+                    d2 = np.full_like(s, float("nan"))
+                    if T > 2:
+                        d2[:, 1:-1] = s[:, 2:] - 2 * s[:, 1:-1] + s[:, :-2]
+                    deriv[:, 2:] = d2[:, 2:] - d2[:, 1:-1]
+            out[:, :, col_offset + d_pos] = deriv
+
+    return out
+
+
+def compute_expanded_static(static_arr: np.ndarray, feature_names: list[str]) -> np.ndarray:
+    """Add engineered static features: log-transforms, interactions, physics proxies.
+
+    Input:  (N, S) raw static features
+    Output: (N, S + E) with E extra engineered columns appended
+
+    Extra features (in order):
+      log1p(usflux), log1p(totpot), log1p(area_acr), log1p(cdaw_mass_log10+10)
+      cme_speed * sin(|cme_latitude| * pi/180)  — latitudinal projection
+      delta_v_kms / (cme_speed_kms + 1)         — relative drag proxy
+      totpot * area_acr                          — SHARP free energy proxy
+      accel_kms2^2                               — squared acceleration
+      second_order_speed_final - second_order_speed_init  — CDAW speed change
+    """
+    idx = {name: i for i, name in enumerate(feature_names)}
+
+    def _col(name: str) -> np.ndarray:
+        i = idx.get(name)
+        return static_arr[:, i].copy() if i is not None else np.full(len(static_arr), float("nan"))
+
+    extras = []
+
+    # Log-transforms for power-law distributed SHARP/CDAW fields
+    for col in ("usflux", "totpot", "area_acr"):
+        v = _col(col)
+        extras.append(np.log1p(np.clip(np.abs(v), 0, None)))
+
+    # CME latitudinal projection: higher latitude → less geo-effective
+    spd = _col("cme_speed_kms")
+    lat = _col("cme_latitude")
+    proj = spd * np.sin(np.abs(lat) * np.pi / 180.0)
+    extras.append(np.where(np.isnan(spd) | np.isnan(lat), float("nan"), proj))
+
+    # Relative drag proxy
+    dv = _col("delta_v_kms")
+    spd2 = _col("cme_speed_kms") + 1.0
+    extras.append(np.where(np.isnan(dv) | np.isnan(spd), float("nan"), dv / spd2))
+
+    # SHARP free energy proxy
+    tp = _col("totpot")
+    ac = _col("area_acr")
+    extras.append(np.where(np.isnan(tp) | np.isnan(ac), float("nan"), tp * ac))
+
+    # Squared acceleration (sign-preserving)
+    acc = _col("accel_kms2")
+    extras.append(np.where(np.isnan(acc), float("nan"), acc * np.abs(acc)))
+
+    # CDAW speed change
+    sf = _col("second_order_speed_final")
+    si = _col("second_order_speed_init")
+    extras.append(np.where(np.isnan(sf) | np.isnan(si), float("nan"), sf - si))
+
+    extra_arr = np.column_stack(extras).astype(np.float32)  # (N, E)
+    return np.concatenate([static_arr, extra_arr], axis=1)
+
+
+EXTRA_STATIC_NAMES = [
+    "log1p_usflux", "log1p_totpot", "log1p_area_acr",
+    "cme_speed_lat_proj", "relative_drag_proxy",
+    "sharp_free_energy_proxy", "accel_signed_sq",
+    "cdaw_speed_change",
+]
+
+DERIV_CHANNEL_NAMES = [
+    f"{order}d_{ch}" for order in ("d1", "d2", "d3")
+    for ch in ["Bz_GSM", "flow_speed", "proton_density", "flow_pressure",
+               "AE_nT", "Dst_nT", "B_scalar_avg", "By_GSM"]
+]
+
+
 def _to_tensor(arr: np.ndarray) -> torch.Tensor:
     return torch.from_numpy(arr)
 
@@ -273,11 +392,20 @@ def build_dataset(split: str, existing_preds: dict) -> dict:
     """Load all tensors for a split. Returns dict ready for TFTTrainer."""
     print(f"  Loading scalar features [{split}]...")
     activity_ids, static_arr, existing_arr, labels = load_scalar_features(split, existing_preds)
-    print(f"    {len(activity_ids)} events, {N_STATIC} static + {N_EXISTING} pred features")
+
+    # Expand static features with engineered interactions/log-transforms
+    static_arr = compute_expanded_static(static_arr, STATIC_FEATURES)
+    print(f"    {len(activity_ids)} events, {static_arr.shape[1]} static ({N_STATIC_BASE} base "
+          f"+ {N_EXTRA_STATIC} engineered) + {N_EXISTING} pred features")
 
     print(f"  Loading sequences [{split}]...")
     pre_arr, transit_arr, transit_mask = load_sequences(split, activity_ids)
-    print(f"    pre_seq: {pre_arr.shape}, transit_seq: {transit_arr.shape}")
+
+    # Append 1st/2nd/3rd derivatives for key OMNI channels
+    pre_arr = compute_sequence_derivatives(pre_arr)
+    transit_arr = compute_sequence_derivatives(transit_arr)
+    print(f"    pre_seq: {pre_arr.shape}, transit_seq: {transit_arr.shape} "
+          f"({N_SEQ_CH_BASE} base + {N_DERIV_CH} derivative channels)")
 
     # Per-feature mean imputation (fit on train, apply consistently)
     # NaN → 0 after z-score norm (z-score computed outside, here just pass as-is;
