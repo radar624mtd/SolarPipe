@@ -1,0 +1,626 @@
+{
+  "activity_id": "2026-03-22T16:23:00-CME-001",
+  "launch_time": "2026-03-22T16:23:00.0000000Z",
+  "initial_speed_kms": 655,
+  "observed_transit_hours": 61.5,
+  "arrival_time_hours": 59.18534765212632,
+  "error_hours": -2.3146523478736825,
+  "termination_reason": "target_reached",
+  "shock_arrived": false,
+  "n_missing_hours": 0,
+  "density_coverage": 1,
+  "gamma_eff_mean": 3.1197640971311458E-09,
+  "gamma_eff_final": 2.523778E-09,
+  "trajectory": [
+    {
+      "hour_index": 0,
+      "time_hours": 0,
+      "r_solar_radii": 21.5,
+      "speed_km_s": 655,
+      "gamma_km_inv": 5.39850425E-09,
+      "n_obs": 2.1594017,
+      "v_obs": 592.95148,
+      "gamma_fellback": false
+    },
+    {
+      "hour_index": 1,
+      "time_hours": 1,
+      "r_solar_radii": 24.88496049858411,
+      "speed_km_s": 653.2910631481834,
+      "gamma_km_inv": 7.349596000000001E-09,
+      "n_obs": 2.9398384,
+      "v_obs": 596.16083,
+      "gamma_fellback": false
+    },
+    {
+      "hour_index": 2,
+      "time_hours": 2,
+      "r_solar_radii": 28.262439533183954,
+      "speed_km_s": 652.1064348691613,
+      "gamma_km_inv": 5.15318575E-09,
+      "n_obs": 2.0612743,
+      "v_obs": 593.26068,
+      "gamma_fellback": false
+    },
+    {
+      "hour_index": 3,
+      "time_hours": 3,
+      "r_solar_radii": 31.633679193614505,
+      "speed_km_s": 650.8796885193417,
+      "gamma_km_inv": 5.3876930000000006E-09,
+      "n_obs": 2.1550772,
+      "v_obs": 618.78302,
+      "gamma_fellback": false
+    },
+    {
+      "hour_index": 4,
+      "time_hours": 4,
+      "r_solar_radii": 34.99885968785257,
+      "speed_km_s": 649.7642293703663,
+      "gamma_km_inv": 4.94487625E-09,
+      "n_obs": 1.9779505,
+      "v_obs": 663.83728,
+      "gamma_fellback": false
+    },
+    {
+      "hour_index": 5,
+      "time_hours": 5,
+      "r_solar_radii": 38.35638832970136,
+      "speed_km_s": 647.925121411705,
+      "gamma_km_inv": 8.25E-09,
+      "n_obs": 3.3,
+      "v_obs": 649,
+      "gamma_fellback": false
+    },
+    {
+      "hour_index": 6,
+      "time_hours": 6,
+      "r_solar_radii": 41.706569657903465,
+      "speed_km_s": 646.9213194225097,
+      "gamma_km_inv": 4.55476975E-09,
+      "n_obs": 1.8219079,
+      "v_obs": 666.7572,
+      "gamma_fellback": false
+    },
+    {
+      "hour_index": 7,
+      "time_hours": 7,
+      "r_solar_radii": 45.051054249717915,
+      "speed_km_s": 645.7239155574603,
+      "gamma_km_inv": 5.481913E-09,
+      "n_obs": 2.1927652,
+      "v_obs": 675.39221,
+      "gamma_fellback": false
+    },
+    {
+      "hour_index": 8,
+      "time_hours": 8,
+      "r_solar_radii": 48.3897704293946,
+      "speed_km_s": 644.6913372971044,
+      "gamma_km_inv": 4.7703962500000004E-09,
+      "n_obs": 1.9081585,
+      "v_obs": 661.31921,
+      "gamma_fellback": false
+    },
+    {
+      "hour_index": 9,
+      "time_hours": 9,
+      "r_solar_radii": 51.72323252639044,
+      "speed_km_s": 643.6931233659458,
+      "gamma_km_inv": 4.6500675E-09,
+      "n_obs": 1.860027,
+      "v_obs": 664.96112,
+      "gamma_fellback": false
+    },
+    {
+      "hour_index": 10,
+      "time_hours": 10,
+      "r_solar_radii": 55.0516985643077,
+      "speed_km_s": 642.7601930853391,
+      "gamma_km_inv": 4.38052275E-09,
+      "n_obs": 1.7522091,
+      "v_obs": 660.09729,
+      "gamma_fellback": false
+    },
+    {
+      "hour_index": 11,
+      "time_hours": 11,
+      "r_solar_radii": 58.37474448450568,
+      "speed_km_s": 641.5989112381797,
+      "gamma_km_inv": 5.5000000000000004E-09,
+      "n_obs": 2.2,
+      "v_obs": 667,
+      "gamma_fellback": false
+    },
+    {
+      "hour_index": 12,
+      "time_hours": 12,
+      "r_solar_radii": 61.69249225768306,
+      "speed_km_s": 640.7116911351534,
+      "gamma_km_inv": 4.2377635E-09,
+      "n_obs": 1.6951054,
+      "v_obs": 670.73468,
+      "gamma_fellback": false
+    },
+    {
+      "hour_index": 13,
+      "time_hours": 13,
+      "r_solar_radii": 65.00613612917972,
+      "speed_km_s": 640.012343463229,
+      "gamma_km_inv": 3.36248125E-09,
+      "n_obs": 1.3449925,
+      "v_obs": 666.93134,
+      "gamma_fellback": false
+    },
+    {
+      "hour_index": 14,
+      "time_hours": 14,
+      "r_solar_radii": 68.31589322914547,
+      "speed_km_s": 639.209671962209,
+      "gamma_km_inv": 3.8834975E-09,
+      "n_obs": 1.553399,
+      "v_obs": 681.70428,
+      "gamma_fellback": false
+    },
+    {
+      "hour_index": 15,
+      "time_hours": 15,
+      "r_solar_radii": 71.62186135914295,
+      "speed_km_s": 638.5476219040127,
+      "gamma_km_inv": 3.2228085000000003E-09,
+      "n_obs": 1.2891234,
+      "v_obs": 675.86731,
+      "gamma_fellback": false
+    },
+    {
+      "hour_index": 16,
+      "time_hours": 16,
+      "r_solar_radii": 74.92360730224507,
+      "speed_km_s": 637.5785001595041,
+      "gamma_km_inv": 4.7499999999999995E-09,
+      "n_obs": 1.9,
+      "v_obs": 681,
+      "gamma_fellback": false
+    },
+    {
+      "hour_index": 17,
+      "time_hours": 17,
+      "r_solar_radii": 78.22108917750697,
+      "speed_km_s": 636.8988935752011,
+      "gamma_km_inv": 3.3541687500000002E-09,
+      "n_obs": 1.3416675,
+      "v_obs": 676,
+      "gamma_fellback": false
+    },
+    {
+      "hour_index": 18,
+      "time_hours": 18,
+      "r_solar_radii": 81.51470887519181,
+      "speed_km_s": 636.0860508480943,
+      "gamma_km_inv": 4.03711075E-09,
+      "n_obs": 1.6148443,
+      "v_obs": 676.9917,
+      "gamma_fellback": false
+    },
+    {
+      "hour_index": 19,
+      "time_hours": 19,
+      "r_solar_radii": 84.80443667025173,
+      "speed_km_s": 635.3944183307729,
+      "gamma_km_inv": 3.457056E-09,
+      "n_obs": 1.3828224,
+      "v_obs": 640.20502,
+      "gamma_fellback": false
+    },
+    {
+      "hour_index": 20,
+      "time_hours": 20,
+      "r_solar_radii": 88.09028798545208,
+      "speed_km_s": 634.5880373699263,
+      "gamma_km_inv": 4.056353E-09,
+      "n_obs": 1.6225412,
+      "v_obs": 639.72693,
+      "gamma_fellback": false
+    },
+    {
+      "hour_index": 21,
+      "time_hours": 21,
+      "r_solar_radii": 91.37212096855983,
+      "speed_km_s": 633.8412044027413,
+      "gamma_km_inv": 3.781761E-09,
+      "n_obs": 1.5127044,
+      "v_obs": 642.54187,
+      "gamma_fellback": false
+    },
+    {
+      "hour_index": 22,
+      "time_hours": 22,
+      "r_solar_radii": 94.65021293242243,
+      "speed_km_s": 633.142037491871,
+      "gamma_km_inv": 3.5623512499999998E-09,
+      "n_obs": 1.4249405,
+      "v_obs": 619.98724,
+      "gamma_fellback": false
+    },
+    {
+      "hour_index": 23,
+      "time_hours": 23,
+      "r_solar_radii": 97.92435112820058,
+      "speed_km_s": 632.3133587420274,
+      "gamma_km_inv": 4.25E-09,
+      "n_obs": 1.7,
+      "v_obs": 620,
+      "gamma_fellback": false
+    },
+    {
+      "hour_index": 24,
+      "time_hours": 24,
+      "r_solar_radii": 101.19584539871832,
+      "speed_km_s": 632.1192309086478,
+      "gamma_km_inv": 1E-09,
+      "n_obs": 0.037972927,
+      "v_obs": 655.51447,
+      "gamma_fellback": false
+    },
+    {
+      "hour_index": 25,
+      "time_hours": 25,
+      "r_solar_radii": 104.46633596583523,
+      "speed_km_s": 631.9254272421692,
+      "gamma_km_inv": 1E-09,
+      "n_obs": 0.3312169,
+      "v_obs": 643.74951,
+      "gamma_fellback": false
+    },
+    {
+      "hour_index": 26,
+      "time_hours": 26,
+      "r_solar_radii": 107.73582450489947,
+      "speed_km_s": 631.7319469312974,
+      "gamma_km_inv": 1E-09,
+      "n_obs": 0.046193153,
+      "v_obs": 642.01947,
+      "gamma_fellback": false
+    },
+    {
+      "hour_index": 27,
+      "time_hours": 27,
+      "r_solar_radii": 111.00182149464024,
+      "speed_km_s": 630.5778104407534,
+      "gamma_km_inv": 6E-09,
+      "n_obs": 2.4,
+      "v_obs": 650,
+      "gamma_fellback": false
+    },
+    {
+      "hour_index": 28,
+      "time_hours": 28,
+      "r_solar_radii": 114.26434239677931,
+      "speed_km_s": 630.3865711287006,
+      "gamma_km_inv": 1E-09,
+      "n_obs": 0.043584339,
+      "v_obs": 635.87476,
+      "gamma_fellback": false
+    },
+    {
+      "hour_index": 29,
+      "time_hours": 29,
+      "r_solar_radii": 117.52587452393529,
+      "speed_km_s": 630.1956487783416,
+      "gamma_km_inv": 1E-09,
+      "n_obs": 0.016930446,
+      "v_obs": 636,
+      "gamma_fellback": false
+    },
+    {
+      "hour_index": 30,
+      "time_hours": 30,
+      "r_solar_radii": 120.78641951423391,
+      "speed_km_s": 630.0050426023267,
+      "gamma_km_inv": 1E-09,
+      "n_obs": 0.26889154,
+      "v_obs": 634.45221,
+      "gamma_fellback": false
+    },
+    {
+      "hour_index": 31,
+      "time_hours": 31,
+      "r_solar_radii": 124.04597900173343,
+      "speed_km_s": 629.8147518159113,
+      "gamma_km_inv": 1E-09,
+      "n_obs": 0.12469064,
+      "v_obs": 618.67877,
+      "gamma_fellback": false
+    },
+    {
+      "hour_index": 32,
+      "time_hours": 32,
+      "r_solar_radii": 127.30455461643803,
+      "speed_km_s": 629.6247756369457,
+      "gamma_km_inv": 1E-09,
+      "n_obs": 0.14756158,
+      "v_obs": 624.83417,
+      "gamma_fellback": false
+    },
+    {
+      "hour_index": 33,
+      "time_hours": 33,
+      "r_solar_radii": 130.562136422488,
+      "speed_km_s": 629.4306471309778,
+      "gamma_km_inv": 1.0235678500000002E-09,
+      "n_obs": 0.40942714,
+      "v_obs": 633.53845,
+      "gamma_fellback": false
+    },
+    {
+      "hour_index": 34,
+      "time_hours": 34,
+      "r_solar_radii": 133.81872607377613,
+      "speed_km_s": 629.2413051993741,
+      "gamma_km_inv": 1E-09,
+      "n_obs": 0.089623816,
+      "v_obs": 620.60437,
+      "gamma_fellback": false
+    },
+    {
+      "hour_index": 35,
+      "time_hours": 35,
+      "r_solar_radii": 137.07214192659828,
+      "speed_km_s": 628.2054855567927,
+      "gamma_km_inv": 5.5000000000000004E-09,
+      "n_obs": 2.2,
+      "v_obs": 613,
+      "gamma_fellback": false
+    },
+    {
+      "hour_index": 36,
+      "time_hours": 36,
+      "r_solar_radii": 140.32010142140584,
+      "speed_km_s": 627.1325446790571,
+      "gamma_km_inv": 5.749999999999999E-09,
+      "n_obs": 2.3,
+      "v_obs": 607,
+      "gamma_fellback": false
+    },
+    {
+      "hour_index": 37,
+      "time_hours": 37,
+      "r_solar_radii": 143.56469792338075,
+      "speed_km_s": 626.904079974362,
+      "gamma_km_inv": 1.231388075E-09,
+      "n_obs": 0.49255523,
+      "v_obs": 599.80109,
+      "gamma_fellback": false
+    },
+    {
+      "hour_index": 38,
+      "time_hours": 38,
+      "r_solar_radii": 146.80822421875004,
+      "speed_km_s": 626.7188835914632,
+      "gamma_km_inv": 1E-09,
+      "n_obs": 0.08337909,
+      "v_obs": 601.32721,
+      "gamma_fellback": false
+    },
+    {
+      "hour_index": 39,
+      "time_hours": 39,
+      "r_solar_radii": 150.05079297057742,
+      "speed_km_s": 626.5339892721472,
+      "gamma_km_inv": 1E-09,
+      "n_obs": 0.040058307,
+      "v_obs": 584.57971,
+      "gamma_fellback": false
+    },
+    {
+      "hour_index": 40,
+      "time_hours": 40,
+      "r_solar_radii": 153.2901435849143,
+      "speed_km_s": 625.4766719813183,
+      "gamma_km_inv": 5.749999999999999E-09,
+      "n_obs": 2.3,
+      "v_obs": 600,
+      "gamma_fellback": false
+    },
+    {
+      "hour_index": 41,
+      "time_hours": 41,
+      "r_solar_radii": 156.523460571299,
+      "speed_km_s": 624.2027492396782,
+      "gamma_km_inv": 7E-09,
+      "n_obs": 2.8,
+      "v_obs": 577,
+      "gamma_fellback": false
+    },
+    {
+      "hour_index": 42,
+      "time_hours": 42,
+      "r_solar_radii": 159.7530197822978,
+      "speed_km_s": 624.02193443875,
+      "gamma_km_inv": 1E-09,
+      "n_obs": 0.019199396,
+      "v_obs": 591.06555,
+      "gamma_fellback": false
+    },
+    {
+      "hour_index": 43,
+      "time_hours": 43,
+      "r_solar_radii": 162.9790834524138,
+      "speed_km_s": 622.8537100489548,
+      "gamma_km_inv": 6.5E-09,
+      "n_obs": 2.6,
+      "v_obs": 579,
+      "gamma_fellback": false
+    },
+    {
+      "hour_index": 44,
+      "time_hours": 44,
+      "r_solar_radii": 166.20166747847313,
+      "speed_km_s": 622.6750637782008,
+      "gamma_km_inv": 1E-09,
+      "n_obs": 0.042782973,
+      "v_obs": 590.01306,
+      "gamma_fellback": false
+    },
+    {
+      "hour_index": 45,
+      "time_hours": 45,
+      "r_solar_radii": 169.42332781439086,
+      "speed_km_s": 622.4967036945326,
+      "gamma_km_inv": 1E-09,
+      "n_obs": 0.056455325,
+      "v_obs": 591.87958,
+      "gamma_fellback": false
+    },
+    {
+      "hour_index": 46,
+      "time_hours": 46,
+      "r_solar_radii": 172.6440659393046,
+      "speed_km_s": 622.3186291108033,
+      "gamma_km_inv": 1E-09,
+      "n_obs": 0.038791582,
+      "v_obs": 585.44586,
+      "gamma_fellback": false
+    },
+    {
+      "hour_index": 47,
+      "time_hours": 47,
+      "r_solar_radii": 175.8638833288018,
+      "speed_km_s": 622.1408393420638,
+      "gamma_km_inv": 1E-09,
+      "n_obs": 0.074258372,
+      "v_obs": 573.98181,
+      "gamma_fellback": false
+    },
+    {
+      "hour_index": 48,
+      "time_hours": 48,
+      "r_solar_radii": 179.08278145493122,
+      "speed_km_s": 621.9633337055549,
+      "gamma_km_inv": 1E-09,
+      "n_obs": 0.025059942,
+      "v_obs": 571.5498,
+      "gamma_fellback": false
+    },
+    {
+      "hour_index": 49,
+      "time_hours": 49,
+      "r_solar_radii": 182.3007617862143,
+      "speed_km_s": 621.7861115206971,
+      "gamma_km_inv": 1E-09,
+      "n_obs": 0.16480172,
+      "v_obs": 571.51208,
+      "gamma_fellback": false
+    },
+    {
+      "hour_index": 50,
+      "time_hours": 50,
+      "r_solar_radii": 185.51782578765628,
+      "speed_km_s": 621.6091721090833,
+      "gamma_km_inv": 1E-09,
+      "n_obs": 0.095947757,
+      "v_obs": 558.43243,
+      "gamma_fellback": false
+    },
+    {
+      "hour_index": 51,
+      "time_hours": 51,
+      "r_solar_radii": 188.7339749207575,
+      "speed_km_s": 621.4325147944694,
+      "gamma_km_inv": 1E-09,
+      "n_obs": 0.019895656,
+      "v_obs": 555.61981,
+      "gamma_fellback": false
+    },
+    {
+      "hour_index": 52,
+      "time_hours": 52,
+      "r_solar_radii": 191.9492106435246,
+      "speed_km_s": 621.2561389027659,
+      "gamma_km_inv": 1E-09,
+      "n_obs": 0.03772781,
+      "v_obs": 539.6723,
+      "gamma_fellback": false
+    },
+    {
+      "hour_index": 53,
+      "time_hours": 53,
+      "r_solar_radii": 195.16353441048153,
+      "speed_km_s": 621.0800437620294,
+      "gamma_km_inv": 1E-09,
+      "n_obs": 0.059815813,
+      "v_obs": 544,
+      "gamma_fellback": false
+    },
+    {
+      "hour_index": 54,
+      "time_hours": 54,
+      "r_solar_radii": 198.37501924629066,
+      "speed_km_s": 620.1601238764077,
+      "gamma_km_inv": 5.250000000000001E-09,
+      "n_obs": 2.1,
+      "v_obs": 549,
+      "gamma_fellback": false
+    },
+    {
+      "hour_index": 55,
+      "time_hours": 55,
+      "r_solar_radii": 201.5836760280999,
+      "speed_km_s": 619.9857683379777,
+      "gamma_km_inv": 1E-09,
+      "n_obs": 0.15450302,
+      "v_obs": 549.41608,
+      "gamma_fellback": false
+    },
+    {
+      "hour_index": 56,
+      "time_hours": 56,
+      "r_solar_radii": 204.79143129626146,
+      "speed_km_s": 619.8116887423221,
+      "gamma_km_inv": 1E-09,
+      "n_obs": 0.24084881,
+      "v_obs": 557.72723,
+      "gamma_fellback": false
+    },
+    {
+      "hour_index": 57,
+      "time_hours": 57,
+      "r_solar_radii": 207.99828647698664,
+      "speed_km_s": 619.6378844348801,
+      "gamma_km_inv": 1E-09,
+      "n_obs": 0.038789369,
+      "v_obs": 550,
+      "gamma_fellback": false
+    },
+    {
+      "hour_index": 58,
+      "time_hours": 58,
+      "r_solar_radii": 211.20424299310483,
+      "speed_km_s": 619.4643547631596,
+      "gamma_km_inv": 1E-09,
+      "n_obs": 0.012830412,
+      "v_obs": 523.90344,
+      "gamma_fellback": false
+    },
+    {
+      "hour_index": 59,
+      "time_hours": 59,
+      "r_solar_radii": 214.40706739227062,
+      "speed_km_s": 618.428907802012,
+      "gamma_km_inv": 6E-09,
+      "n_obs": 2.4,
+      "v_obs": 545,
+      "gamma_fellback": false
+    },
+    {
+      "hour_index": 60,
+      "time_hours": 59.18534765212632,
+      "r_solar_radii": 215,
+      "speed_km_s": 618.3487215453065,
+      "gamma_km_inv": 2.523778E-09,
+      "n_obs": 1.0095112,
+      "v_obs": 528.36652,
+      "gamma_fellback": false
+    }
+  ]
+}

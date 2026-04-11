@@ -141,15 +141,25 @@ def _safe_median(vals: list[float | None]) -> float | None:
 
 # ── Step 1: load base events ──────────────────────────────────────────────────
 
+_SHARP_FIELDS = [
+    "usflux", "meangam", "meangbt", "meangbz", "meangbh",
+    "meanjzd", "totusjz", "meanalp", "meanjzh", "totusjh",
+    "absnjzh", "savncpp", "meanpot", "totpot", "meanshr",
+    "shrgt45", "r_value", "area_acr",
+]
+
+
 def load_base_events(conn_staging: sqlite3.Connection) -> list[dict]:
-    rows = conn_staging.execute("""
+    sharp_cols = ", ".join(_SHARP_FIELDS)
+    rows = conn_staging.execute(f"""
         SELECT activity_id, launch_time, icme_arrival_time, transit_time_hours,
                linked_ips_id, cme_speed_kms, cme_half_angle_deg,
                cme_latitude, cme_longitude, cme_angular_width_deg,
                sw_speed_ambient, sw_density_ambient, sw_bz_ambient,
                flare_class_numeric, flare_class_letter,
-               linked_flare_id, usflux, sharp_harpnum,
-               f10_7
+               linked_flare_id, sharp_harpnum,
+               f10_7,
+               {sharp_cols}
         FROM feature_vectors
         WHERE transit_time_hours BETWEEN ? AND ?
     """, (TRANSIT_MIN, TRANSIT_MAX)).fetchall()
@@ -163,7 +173,7 @@ def load_base_events(conn_staging: sqlite3.Connection) -> list[dict]:
         if tt is None or tt < 0:
             continue  # exclude data errors
         split = "holdout" if (launch >= _parse_dt(HOLDOUT_START)) else "train"
-        events.append({
+        ev: dict = {
             "activity_id": r[0],
             "launch_time": _dt_str(launch),
             "launch_dt": launch,
@@ -181,11 +191,14 @@ def load_base_events(conn_staging: sqlite3.Connection) -> list[dict]:
             "flare_class_numeric": r[13],
             "flare_class_letter": r[14],
             "linked_flare_id": r[15],
-            "usflux": r[16],
-            "sharp_available": 1 if r[17] else 0,
-            "f10_7_fv": r[18],
+            "sharp_available": 1 if r[16] else 0,
+            "f10_7_fv": r[17],
             "split": split,
-        })
+        }
+        # SHARP magnetic fields (columns 18+)
+        for i, field in enumerate(_SHARP_FIELDS):
+            ev[field] = r[18 + i]
+        events.append(ev)
     return events
 
 
@@ -196,25 +209,36 @@ def build_regime_features(
     events: list[dict],
 ) -> None:
     """Adds regime_ keys in-place."""
-    # Preload ml_clusters k=5
-    cluster_map: dict[str, int] = {}
-    pca_pts: list[tuple[float, float, int]] = []  # (x, y, cluster_id)
+    # Preload ml_clusters for k=5, k=8, k=12
+    cluster_map: dict[str, int] = {}       # k=5
+    cluster_map_k8: dict[str, int] = {}    # k=8
+    cluster_map_k12: dict[str, int] = {}   # k=12
+    pca_pts: list[tuple[float, float, int]] = []  # (x, y, cluster_id) for k=5 NNN fallback
     for row in conn_solar.execute(
-        'SELECT event_id, cluster_id, pca_x, pca_y FROM ml_clusters '
-        'WHERE cluster_method="kmeans" AND k=5'
+        'SELECT event_id, cluster_id, k, pca_x, pca_y FROM ml_clusters '
+        'WHERE cluster_method="kmeans" AND k IN (5, 8, 12)'
     ):
-        event_id, cid, px, py = row
-        # event_id = "CME_<activity_id>"
+        event_id, cid, k, px, py = row
         aid = event_id[4:] if event_id.startswith("CME_") else event_id
-        cluster_map[aid] = cid
-        if px is not None and py is not None:
-            pca_pts.append((px, py, cid))
+        if k == 5:
+            cluster_map[aid] = cid
+            if px is not None and py is not None:
+                pca_pts.append((px, py, cid))
+        elif k == 8:
+            cluster_map_k8[aid] = cid
+        elif k == 12:
+            cluster_map_k12[aid] = cid
 
-    print(f"  ml_clusters loaded: {len(cluster_map)} entries, {len(pca_pts)} PCA points")
+    print(f"  ml_clusters loaded: k5={len(cluster_map)}, k8={len(cluster_map_k8)}, k12={len(cluster_map_k12)}, pca_pts={len(pca_pts)}")
 
     for ev in events:
         launch = ev["launch_dt"]
-        cols = ["Bz_GSM", "flow_speed", "proton_density", "flow_pressure", "AE_nT", "Dst_nT", "Kp_x10"]
+        cols = [
+            "Bz_GSM", "flow_speed", "proton_density", "flow_pressure",
+            "AE_nT", "Dst_nT", "Kp_x10",
+            "Bx_GSE", "By_GSM", "sigma_Bz",
+            "electric_field", "plasma_beta", "alfven_mach", "magnetosonic_mach",
+        ]
         w = _omni_window(conn_solar, launch, 24, cols)
 
         ev["omni_24h_bz_mean"] = _safe_mean(w["Bz_GSM"])
@@ -226,6 +250,14 @@ def build_regime_features(
         ev["omni_24h_ae_max"] = _safe_max(w["AE_nT"])
         ev["omni_24h_dst_min"] = _safe_min(w["Dst_nT"])
         ev["omni_24h_kp_max"] = _safe_max(w["Kp_x10"])
+        # Expanded OMNI channels
+        ev["omni_24h_bx_mean"] = _safe_mean(w["Bx_GSE"])
+        ev["omni_24h_by_mean"] = _safe_mean(w["By_GSM"])
+        ev["omni_24h_bz_sigma"] = _safe_mean(w["sigma_Bz"])
+        ev["omni_24h_efield_mean"] = _safe_mean(w["electric_field"])
+        ev["omni_24h_plasma_beta_mean"] = _safe_mean(w["plasma_beta"])
+        ev["omni_24h_alfven_mach_mean"] = _safe_mean(w["alfven_mach"])
+        ev["omni_24h_ms_mach_mean"] = _safe_mean(w["magnetosonic_mach"])
 
         # F10.7 — prefer gfz daily, fall back to feature_vectors
         date_str = launch.strftime("%Y-%m-%d")
@@ -237,7 +269,7 @@ def build_regime_features(
         else:
             ev["f10_7"] = ev.get("f10_7_fv")
 
-        # cluster_id_k5
+        # cluster IDs — k5, k8, k12
         aid = ev["activity_id"]
         if aid in cluster_map:
             ev["cluster_id_k5"] = cluster_map[aid]
@@ -245,8 +277,10 @@ def build_regime_features(
         else:
             ev["cluster_id_k5"] = None
             ev["cluster_assigned"] = None
+        ev["cluster_id_k8"] = cluster_map_k8.get(aid)
+        ev["cluster_id_k12"] = cluster_map_k12.get(aid)
 
-    # NNN imputation for unmatched training events
+    # NNN imputation for unmatched training events (k=5 only; k8/k12 have full coverage)
     train_unmatched = [e for e in events if e["split"] == "train" and e["cluster_id_k5"] is None]
     if train_unmatched and pca_pts:
         print(f"  NNN cluster imputation for {len(train_unmatched)} unmatched training events")
@@ -384,7 +418,9 @@ def build_physics_features(
         # CDAW match ±6h
         t_str = _dt_str(launch)
         cdaw = conn_solar.execute("""
-            SELECT linear_speed_kms, angular_width_deg, mass_grams, kinetic_energy_ergs
+            SELECT linear_speed_kms, angular_width_deg, mass_grams, kinetic_energy_ergs,
+                   second_order_speed_init, second_order_speed_final,
+                   second_order_speed_20Rs, accel_kms2
             FROM cdaw_cme
             WHERE abs(julianday(datetime) - julianday(?)) * 24 <= 6
             ORDER BY abs(julianday(datetime) - julianday(?))
@@ -395,12 +431,20 @@ def build_physics_features(
             ev["cdaw_angular_width_deg"] = cdaw[1]
             ev["cdaw_mass_log10"] = math.log10(cdaw[2]) if cdaw[2] and cdaw[2] > 0 else None
             ev["cdaw_ke_log10"] = math.log10(cdaw[3]) if cdaw[3] and cdaw[3] > 0 else None
+            ev["cdaw_2nd_speed_init"] = cdaw[4]
+            ev["cdaw_2nd_speed_final"] = cdaw[5]
+            ev["cdaw_2nd_speed_20rs"] = cdaw[6]
+            ev["cdaw_accel_kms2"] = cdaw[7]
             ev["cdaw_matched"] = 1
         else:
             ev["cdaw_linear_speed_kms"] = None
             ev["cdaw_angular_width_deg"] = None
             ev["cdaw_mass_log10"] = None
             ev["cdaw_ke_log10"] = None
+            ev["cdaw_2nd_speed_init"] = None
+            ev["cdaw_2nd_speed_final"] = None
+            ev["cdaw_2nd_speed_20rs"] = None
+            ev["cdaw_accel_kms2"] = None
             ev["cdaw_matched"] = 0
 
         # Flare
@@ -450,7 +494,11 @@ def _create_tables(conn: sqlite3.Connection) -> None:
         omni_24h_bz_mean REAL, omni_24h_bz_std REAL, omni_24h_bz_min REAL,
         omni_24h_speed_mean REAL, omni_24h_density_mean REAL, omni_24h_pressure_mean REAL,
         omni_24h_ae_max REAL, omni_24h_dst_min REAL, omni_24h_kp_max REAL,
-        f10_7 REAL, cluster_id_k5 INTEGER, cluster_assigned INTEGER
+        omni_24h_bx_mean REAL, omni_24h_by_mean REAL, omni_24h_bz_sigma REAL,
+        omni_24h_efield_mean REAL, omni_24h_plasma_beta_mean REAL,
+        omni_24h_alfven_mach_mean REAL, omni_24h_ms_mach_mean REAL,
+        f10_7 REAL, cluster_id_k5 INTEGER, cluster_assigned INTEGER,
+        cluster_id_k8 INTEGER, cluster_id_k12 INTEGER
     );
 
     DROP TABLE IF EXISTS pinn_interaction_features;
@@ -471,11 +519,18 @@ def _create_tables(conn: sqlite3.Connection) -> None:
         cme_speed_kms REAL, cme_half_angle_deg REAL,
         cme_latitude REAL, cme_longitude REAL, cme_angular_width_deg REAL,
         cdaw_linear_speed_kms REAL, cdaw_angular_width_deg REAL,
-        cdaw_mass_log10 REAL, cdaw_ke_log10 REAL, cdaw_matched INTEGER,
+        cdaw_mass_log10 REAL, cdaw_ke_log10 REAL,
+        cdaw_2nd_speed_init REAL, cdaw_2nd_speed_final REAL,
+        cdaw_2nd_speed_20rs REAL, cdaw_accel_kms2 REAL,
+        cdaw_matched INTEGER,
         flare_class_numeric REAL, has_flare INTEGER, flare_source_longitude REAL,
         omni_150h_density_median REAL, omni_150h_speed_median REAL,
         sw_bz_ambient REAL, delta_v_kms REAL,
-        usflux REAL, sharp_available INTEGER
+        usflux REAL, meangam REAL, meangbt REAL, meangbz REAL, meangbh REAL,
+        meanjzd REAL, totusjz REAL, meanalp REAL, meanjzh REAL, totusjh REAL,
+        absnjzh REAL, savncpp REAL, meanpot REAL, totpot REAL, meanshr REAL,
+        shrgt45 REAL, r_value REAL, area_acr REAL,
+        sharp_available INTEGER
     );
 
     DROP TABLE IF EXISTS pinn_training_flat;
@@ -490,7 +545,11 @@ def _create_tables(conn: sqlite3.Connection) -> None:
         omni_24h_bz_mean REAL, omni_24h_bz_std REAL, omni_24h_bz_min REAL,
         omni_24h_speed_mean REAL, omni_24h_density_mean REAL, omni_24h_pressure_mean REAL,
         omni_24h_ae_max REAL, omni_24h_dst_min REAL, omni_24h_kp_max REAL,
+        omni_24h_bx_mean REAL, omni_24h_by_mean REAL, omni_24h_bz_sigma REAL,
+        omni_24h_efield_mean REAL, omni_24h_plasma_beta_mean REAL,
+        omni_24h_alfven_mach_mean REAL, omni_24h_ms_mach_mean REAL,
         f10_7 REAL, cluster_id_k5 INTEGER, cluster_assigned INTEGER,
+        cluster_id_k8 INTEGER, cluster_id_k12 INTEGER,
         preceding_cme_count_48h INTEGER,
         preceding_cme_speed_max REAL, preceding_cme_speed_mean REAL,
         preceding_cme_angular_sep_min REAL, is_multi_cme INTEGER,
@@ -498,11 +557,18 @@ def _create_tables(conn: sqlite3.Connection) -> None:
         cme_speed_kms REAL, cme_half_angle_deg REAL,
         cme_latitude REAL, cme_longitude REAL, cme_angular_width_deg REAL,
         cdaw_linear_speed_kms REAL, cdaw_angular_width_deg REAL,
-        cdaw_mass_log10 REAL, cdaw_ke_log10 REAL, cdaw_matched INTEGER,
+        cdaw_mass_log10 REAL, cdaw_ke_log10 REAL,
+        cdaw_2nd_speed_init REAL, cdaw_2nd_speed_final REAL,
+        cdaw_2nd_speed_20rs REAL, cdaw_accel_kms2 REAL,
+        cdaw_matched INTEGER,
         flare_class_numeric REAL, has_flare INTEGER, flare_source_longitude REAL,
         omni_150h_density_median REAL, omni_150h_speed_median REAL,
         sw_bz_ambient REAL, delta_v_kms REAL,
-        usflux REAL, sharp_available INTEGER
+        usflux REAL, meangam REAL, meangbt REAL, meangbz REAL, meangbh REAL,
+        meanjzd REAL, totusjz REAL, meanalp REAL, meanjzh REAL, totusjh REAL,
+        absnjzh REAL, savncpp REAL, meanpot REAL, totpot REAL, meanshr REAL,
+        shrgt45 REAL, r_value REAL, area_acr REAL,
+        sharp_available INTEGER
     );
     """)
     conn.commit()
@@ -523,12 +589,16 @@ def write_tables(conn: sqlite3.Connection, events: list[dict]) -> None:
     )
 
     conn.executemany(
-        "INSERT INTO pinn_regime_features VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        f"INSERT INTO pinn_regime_features VALUES ({','.join(['?']*22)})",
         [(_g(e, "activity_id"),
           _g(e, "omni_24h_bz_mean"), _g(e, "omni_24h_bz_std"), _g(e, "omni_24h_bz_min"),
           _g(e, "omni_24h_speed_mean"), _g(e, "omni_24h_density_mean"), _g(e, "omni_24h_pressure_mean"),
           _g(e, "omni_24h_ae_max"), _g(e, "omni_24h_dst_min"), _g(e, "omni_24h_kp_max"),
-          _g(e, "f10_7"), _g(e, "cluster_id_k5"), _g(e, "cluster_assigned"))
+          _g(e, "omni_24h_bx_mean"), _g(e, "omni_24h_by_mean"), _g(e, "omni_24h_bz_sigma"),
+          _g(e, "omni_24h_efield_mean"), _g(e, "omni_24h_plasma_beta_mean"),
+          _g(e, "omni_24h_alfven_mach_mean"), _g(e, "omni_24h_ms_mach_mean"),
+          _g(e, "f10_7"), _g(e, "cluster_id_k5"), _g(e, "cluster_assigned"),
+          _g(e, "cluster_id_k8"), _g(e, "cluster_id_k12"))
          for e in events],
     )
 
@@ -543,44 +613,66 @@ def write_tables(conn: sqlite3.Connection, events: list[dict]) -> None:
     )
 
     conn.executemany(
-        "INSERT INTO pinn_physics_features VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        f"INSERT INTO pinn_physics_features VALUES ({','.join(['?']*41)})",
         [(_g(e, "activity_id"),
           _g(e, "cme_speed_kms"), _g(e, "cme_half_angle_deg"),
           _g(e, "cme_latitude"), _g(e, "cme_longitude"), _g(e, "cme_angular_width_deg"),
           _g(e, "cdaw_linear_speed_kms"), _g(e, "cdaw_angular_width_deg"),
-          _g(e, "cdaw_mass_log10"), _g(e, "cdaw_ke_log10"), _g(e, "cdaw_matched"),
+          _g(e, "cdaw_mass_log10"), _g(e, "cdaw_ke_log10"),
+          _g(e, "cdaw_2nd_speed_init"), _g(e, "cdaw_2nd_speed_final"),
+          _g(e, "cdaw_2nd_speed_20rs"), _g(e, "cdaw_accel_kms2"),
+          _g(e, "cdaw_matched"),
           _g(e, "flare_class_numeric_db"), _g(e, "has_flare"), _g(e, "flare_source_longitude"),
           _g(e, "omni_150h_density_median"), _g(e, "omni_150h_speed_median"),
           _g(e, "sw_bz_ambient"), _g(e, "delta_v_kms"),
-          _g(e, "usflux"), _g(e, "sharp_available"))
+          _g(e, "usflux"), _g(e, "meangam"), _g(e, "meangbt"), _g(e, "meangbz"), _g(e, "meangbh"),
+          _g(e, "meanjzd"), _g(e, "totusjz"), _g(e, "meanalp"), _g(e, "meanjzh"), _g(e, "totusjh"),
+          _g(e, "absnjzh"), _g(e, "savncpp"), _g(e, "meanpot"), _g(e, "totpot"), _g(e, "meanshr"),
+          _g(e, "shrgt45"), _g(e, "r_value"), _g(e, "area_acr"),
+          _g(e, "sharp_available"))
          for e in events],
     )
 
     conn.executemany(
-        """INSERT INTO pinn_training_flat VALUES (
-            ?,?,?,?,?,?,?,
-            ?,?,?,?,?,?,?,?,?,?,?,?,
-            ?,?,?,?,?,?,?,
-            ?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?
-        )""",
+        f"INSERT INTO pinn_training_flat VALUES ({','.join(['?']*75)})",
         [(_g(e, "activity_id"), _g(e, "linked_ips_id"), _g(e, "launch_time"),
           _g(e, "icme_arrival_time"), _g(e, "split"), 0, _g(e, "transit_time_hours"),
+          # regime OMNI (16)
           _g(e, "omni_24h_bz_mean"), _g(e, "omni_24h_bz_std"), _g(e, "omni_24h_bz_min"),
           _g(e, "omni_24h_speed_mean"), _g(e, "omni_24h_density_mean"), _g(e, "omni_24h_pressure_mean"),
           _g(e, "omni_24h_ae_max"), _g(e, "omni_24h_dst_min"), _g(e, "omni_24h_kp_max"),
+          _g(e, "omni_24h_bx_mean"), _g(e, "omni_24h_by_mean"), _g(e, "omni_24h_bz_sigma"),
+          _g(e, "omni_24h_efield_mean"), _g(e, "omni_24h_plasma_beta_mean"),
+          _g(e, "omni_24h_alfven_mach_mean"), _g(e, "omni_24h_ms_mach_mean"),
+          # cluster (5)
           _g(e, "f10_7"), _g(e, "cluster_id_k5"), _g(e, "cluster_assigned"),
+          _g(e, "cluster_id_k8"), _g(e, "cluster_id_k12"),
+          # interaction (7)
           _g(e, "preceding_cme_count_48h"), _g(e, "preceding_cme_speed_max"),
           _g(e, "preceding_cme_speed_mean"), _g(e, "preceding_cme_angular_sep_min"),
           _g(e, "is_multi_cme"),
           _g(e, "omni_48h_density_spike_max"), _g(e, "omni_48h_speed_gradient"),
+          # CME geometry (5)
           _g(e, "cme_speed_kms"), _g(e, "cme_half_angle_deg"),
           _g(e, "cme_latitude"), _g(e, "cme_longitude"), _g(e, "cme_angular_width_deg"),
+          # CDAW (9)
           _g(e, "cdaw_linear_speed_kms"), _g(e, "cdaw_angular_width_deg"),
-          _g(e, "cdaw_mass_log10"), _g(e, "cdaw_ke_log10"), _g(e, "cdaw_matched"),
+          _g(e, "cdaw_mass_log10"), _g(e, "cdaw_ke_log10"),
+          _g(e, "cdaw_2nd_speed_init"), _g(e, "cdaw_2nd_speed_final"),
+          _g(e, "cdaw_2nd_speed_20rs"), _g(e, "cdaw_accel_kms2"),
+          _g(e, "cdaw_matched"),
+          # flare (3)
           _g(e, "flare_class_numeric_db"), _g(e, "has_flare"), _g(e, "flare_source_longitude"),
+          # OMNI150 + ambient (4)
           _g(e, "omni_150h_density_median"), _g(e, "omni_150h_speed_median"),
           _g(e, "sw_bz_ambient"), _g(e, "delta_v_kms"),
-          _g(e, "usflux"), _g(e, "sharp_available"))
+          # SHARP magnetic (18)
+          _g(e, "usflux"), _g(e, "meangam"), _g(e, "meangbt"), _g(e, "meangbz"), _g(e, "meangbh"),
+          _g(e, "meanjzd"), _g(e, "totusjz"), _g(e, "meanalp"), _g(e, "meanjzh"), _g(e, "totusjh"),
+          _g(e, "absnjzh"), _g(e, "savncpp"), _g(e, "meanpot"), _g(e, "totpot"), _g(e, "meanshr"),
+          _g(e, "shrgt45"), _g(e, "r_value"), _g(e, "area_acr"),
+          # sharp flag (1)
+          _g(e, "sharp_available"))
          for e in events],
     )
 
