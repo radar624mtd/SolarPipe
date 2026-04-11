@@ -152,12 +152,22 @@ def load_scalar_features(split: str, existing_preds: dict) -> tuple[list[str], n
         for r in rows
     ], dtype=np.float32)
 
+    # SHARP sentinel values (usflux etc.) can be 1e20–1e22 — convert to NaN
+    _SENTINEL_ABS = 9990.0
+
     feat_arr = np.full((len(rows), N_STATIC + N_EXISTING), float("nan"), dtype=np.float32)
     for i, r in enumerate(rows):
         for j, col in enumerate(STATIC_FEATURES):
             v = r[col_idx[col]]
             if v is not None:
-                feat_arr[i, j] = float(v)
+                fv = float(v)
+                if abs(fv) < _SENTINEL_ABS or col in ("cluster_id_k5", "cluster_id_k8",
+                                                        "cluster_id_k12", "cluster_id_dbscan",
+                                                        "cluster_assigned", "is_multi_cme",
+                                                        "has_flare", "sharp_available",
+                                                        "cdaw_matched", "enlil_matched"):
+                    feat_arr[i, j] = fv
+                # else: leave as NaN (sentinel)
         # Merge existing predictions from JSON if DB column is NULL
         for k, col in enumerate(EXISTING_PRED_COLS):
             v = r[col_idx[col]]
@@ -171,6 +181,34 @@ def load_scalar_features(split: str, existing_preds: dict) -> tuple[list[str], n
     static_arr = feat_arr[:, :N_STATIC]
     existing_arr = feat_arr[:, N_STATIC:]
     return activity_ids, static_arr, existing_arr, labels
+
+
+def impute_and_normalize(
+    train_arr: np.ndarray,
+    val_arr: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Mean imputation + z-score normalization. Fit on train, apply to val.
+
+    Returns: train_norm, val_norm, col_means (for predict time), col_stds
+    """
+    col_means = np.nanmean(train_arr, axis=0)  # (S,) — NaN if entire column is NaN
+    col_stds = np.nanstd(train_arr, axis=0)    # (S,)
+    # All-NaN columns: impute to 0, std=1 (they carry no signal)
+    col_means = np.where(np.isnan(col_means), 0.0, col_means)
+    col_stds = np.where(np.isnan(col_stds) | (col_stds < 1e-8), 1.0, col_stds)
+
+    def _apply(arr: np.ndarray) -> np.ndarray:
+        out = arr.copy()
+        nan_mask = np.isnan(out)
+        # Mean impute per column
+        out = np.where(nan_mask, col_means[np.newaxis, :], out)
+        # Z-score
+        out = (out - col_means) / col_stds
+        # Clip to [-5, 5] to prevent gradient explosion
+        out = np.clip(out, -5.0, 5.0)
+        return out.astype(np.float32)
+
+    return _apply(train_arr), _apply(val_arr), col_means, col_stds
 
 
 def load_sequences(split: str, activity_ids: list[str]) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -363,6 +401,42 @@ def main() -> int:
     print("\n[2/4] Building datasets...")
     train_ds = build_dataset("train", existing_preds)
     holdout_ds = build_dataset("holdout", existing_preds)
+
+    # Impute sentinels → NaN → mean, then z-score normalize. Fit on train only.
+    train_static_np = train_ds["static"].numpy()
+    hold_static_np = holdout_ds["static"].numpy()
+    train_norm, hold_norm, col_means, col_stds = impute_and_normalize(train_static_np, hold_static_np)
+    train_ds["static"] = torch.from_numpy(train_norm)
+    holdout_ds["static"] = torch.from_numpy(hold_norm)
+    print(f"  Static nan after norm: {torch.isnan(train_ds['static']).sum().item()}")
+
+    # Normalize sequences: fit per-channel on train, apply to both splits
+    # Shape (N, T, C) → reshape to (N*T, C) for stats
+    train_pre_np = train_ds["pre_seq"].numpy()   # (1884, 150, 20)
+    hold_pre_np = holdout_ds["pre_seq"].numpy()
+    N_tr, T_pre, C = train_pre_np.shape
+    train_pre_flat = train_pre_np.reshape(-1, C)
+    hold_pre_flat = hold_pre_np.reshape(-1, C)
+    tr_pre_norm, ho_pre_norm, seq_means, seq_stds = impute_and_normalize(train_pre_flat, hold_pre_flat)
+    train_ds["pre_seq"] = torch.from_numpy(tr_pre_norm.reshape(N_tr, T_pre, C))
+    holdout_ds["pre_seq"] = torch.from_numpy(ho_pre_norm.reshape(hold_pre_np.shape[0], T_pre, C))
+
+    train_tr_np = train_ds["transit_seq"].numpy()   # (1884, 72, 20)
+    hold_tr_np = holdout_ds["transit_seq"].numpy()
+    _, T_tr, _ = train_tr_np.shape
+    tr_tr_norm, ho_tr_norm, _, _ = impute_and_normalize(
+        train_tr_np.reshape(-1, C), hold_tr_np.reshape(-1, C))
+    train_ds["transit_seq"] = torch.from_numpy(tr_tr_norm.reshape(N_tr, T_tr, C))
+    holdout_ds["transit_seq"] = torch.from_numpy(ho_tr_norm.reshape(hold_tr_np.shape[0], T_tr, C))
+
+    # Normalize existing_preds (transit hours → z-score)
+    train_ep_np = train_ds["existing_preds"].numpy()
+    hold_ep_np = holdout_ds["existing_preds"].numpy()
+    tr_ep_norm, ho_ep_norm, _, _ = impute_and_normalize(train_ep_np, hold_ep_np)
+    train_ds["existing_preds"] = torch.from_numpy(tr_ep_norm)
+    holdout_ds["existing_preds"] = torch.from_numpy(ho_ep_norm)
+    print(f"  Sequence + existing_preds normalized. Seq nan after norm: "
+          f"{torch.isnan(train_ds['pre_seq']).sum().item()}")
 
     model_kwargs = {
         "n_static": N_STATIC,
