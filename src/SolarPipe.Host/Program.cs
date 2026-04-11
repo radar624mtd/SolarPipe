@@ -1,4 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
 using SolarPipe.Config;
 using SolarPipe.Core.Interfaces;
 using SolarPipe.Data;
@@ -6,7 +7,10 @@ using SolarPipe.Data.Providers;
 using SolarPipe.Host.Commands;
 using SolarPipe.Training.Adapters;
 using SolarPipe.Training.Checkpoint;
+using SolarPipe.Training.Evaluation;
 using SolarPipe.Training.Registry;
+using SolarPipe.Training.Features;
+using SolarPipe.Training.Sweep;
 
 namespace SolarPipe.Host;
 
@@ -38,6 +42,9 @@ internal static class Program
             "predict"         => await services.GetRequiredService<PredictCommand>().ExecuteAsync(commandArgs, cts.Token),
             "inspect"         => await services.GetRequiredService<InspectCommand>().ExecuteAsync(commandArgs, cts.Token),
             "validate-events" => await services.GetRequiredService<ValidateEventsCommand>().ExecuteAsync(commandArgs, cts.Token),
+            "sweep"           => await services.GetRequiredService<SweepCommand>().ExecuteAsync(commandArgs, cts.Token),
+            "domain-sweep"    => await services.GetRequiredService<DomainSweepCommand>().ExecuteAsync(commandArgs, cts.Token),
+            "predict-progressive" => await services.GetRequiredService<PredictProgressiveCommand>().ExecuteAsync(commandArgs, cts.Token),
             _ => UnknownCommand(command),
         };
     }
@@ -65,6 +72,35 @@ internal static class Program
         var cacheRoot = Environment.GetEnvironmentVariable("SOLARPIPE_CACHE") ?? "./cache";
         var checkpointManager = new CheckpointManager(cacheRoot);
 
+        var metricsEvaluator = new ComprehensiveMetricsEvaluator();
+        var nnlsOptimizer    = new NnlsEnsembleOptimizer();
+        var sweepLoader       = new SweepConfigLoader();
+        var domainSweepLoader = new DomainSweepConfigLoader();
+
+        var sidecarAddress = Environment.GetEnvironmentVariable("SOLARPIPE_SIDECAR_ADDRESS")
+            ?? "http://localhost:50051";
+        GrpcSidecarAdapter? sidecarAdapter = null;
+        try { sidecarAdapter = new GrpcSidecarAdapter(sidecarAddress); }
+        catch { /* sidecar optional — pre-flight will fail if H7 is needed */ }
+
+        // Build SidecarLifecycleService so SweepCommand can start/stop the Python process.
+        // Uses NullApplicationLifetime since the CLI host does not use IGenericHost.
+        var sidecarOptions = SidecarOptions.FromEnvironment();
+        SidecarLifecycleService? sidecarLifecycle = sidecarOptions.Enabled
+            ? new SidecarLifecycleService(
+                sidecarOptions,
+                new NullApplicationLifetime(),
+                NullLogger<SidecarLifecycleService>.Instance)
+            : null;
+
+        var allAdapters = sidecarAdapter is not null
+            ? (IReadOnlyList<IFrameworkAdapter>)new IFrameworkAdapter[] { mlNetAdapter, physicsAdapter, sidecarAdapter }
+            : adapters;
+
+        var modelSweep  = new ModelSweep(allAdapters, metricsEvaluator, nnlsOptimizer,
+            cacheRoot, registryPath, sidecarAdapter);
+        var domainSweep = new DomainPipelineSweep(allAdapters);
+
         return new ServiceCollection()
             .AddSingleton(configLoader)
             .AddSingleton(dataRegistry)
@@ -79,6 +115,19 @@ internal static class Program
                 sp.GetRequiredService<PipelineConfigLoader>(),
                 sp.GetRequiredService<IModelRegistry>(),
                 sp.GetRequiredService<DataSourceRegistry>()))
+            .AddSingleton(sp => new SweepCommand(
+                sweepLoader,
+                sp.GetRequiredService<DataSourceRegistry>(),
+                sp.GetRequiredService<IReadOnlyList<IFrameworkAdapter>>(),
+                modelSweep,
+                cacheRoot,
+                sidecarLifecycle))
+            .AddSingleton(sp => new DomainSweepCommand(
+                domainSweepLoader,
+                sp.GetRequiredService<DataSourceRegistry>(),
+                sp.GetRequiredService<IReadOnlyList<IFrameworkAdapter>>(),
+                domainSweep))
+            .AddSingleton(sp => new PredictProgressiveCommand(domainSweepLoader))
             .BuildServiceProvider();
     }
 
@@ -86,7 +135,7 @@ internal static class Program
     {
         Console.Error.WriteLine(
             $"ERROR type=UnknownCommand command=\"{command}\" " +
-            $"valid_commands=\"validate, train, predict, inspect, validate-events\"");
+            $"valid_commands=\"validate, train, predict, inspect, validate-events, sweep, domain-sweep, predict-progressive\"");
         PrintUsage();
         return ExitCodes.UnknownCommand;
     }
@@ -99,5 +148,10 @@ internal static class Program
         Console.WriteLine("  predict          --config <path> --input <csv> --output <json> [--stage <name>]");
         Console.WriteLine("  inspect          [--stage <name>]");
         Console.WriteLine("  validate-events  --config <path> [--output <path>]");
+        Console.WriteLine("  sweep            --config <path> [--resume|--fresh] [--output <dir>]");
+        Console.WriteLine("  domain-sweep     --config <path> [--output <dir>]");
+        Console.WriteLine("  predict-progressive --config <path> [--event <iso> --until <iso> | --backtest]");
+        Console.WriteLine("                      [--mode density|static] [--n-ref <cm-3>] [--output <dir>]");
+        Console.WriteLine("                      [--omni-db <conn>] [--allow-future]");
     }
 }

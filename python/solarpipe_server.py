@@ -183,12 +183,23 @@ def _train_tft(
     lr = float(hyperparameters.get("learning_rate", "1e-3"))
     hidden = int(hyperparameters.get("hidden_size", "64"))
 
-    # Build tensors from Arrow table
-    feat_arrays = [table.column(c).to_pylist() for c in feature_columns]
-    tgt_array = table.column(target_column).to_pylist()
+    # Build tensors from Arrow table — replace Arrow nulls (None) with NaN, then filter
+    import math
+    feat_arrays = [[float("nan") if v is None else float(v)
+                    for v in table.column(c).to_pylist()]
+                   for c in feature_columns]
+    tgt_array = [float("nan") if v is None else float(v)
+                 for v in table.column(target_column).to_pylist()]
+    n_raw = len(tgt_array)
+    valid = [i for i in range(n_raw)
+             if not math.isnan(tgt_array[i])
+             and all(not math.isnan(feat_arrays[j][i]) for j in range(len(feature_columns)))]
+    if not valid:
+        raise ValueError("TFT trainer: all rows contain NaN — cannot train")
+    feat_arrays = [[fa[i] for i in valid] for fa in feat_arrays]
+    tgt_array = [tgt_array[i] for i in valid]
     n = len(tgt_array)
 
-    import numpy as np
     X = torch.tensor(feat_arrays, dtype=torch.float32).T.unsqueeze(1)  # (n, 1, features)
     y = torch.tensor(tgt_array, dtype=torch.float32).unsqueeze(1)      # (n, 1)
 
@@ -247,7 +258,12 @@ class _NeuralOdeDynamics(nn.Module if _TORCH_AVAILABLE else object):
     def forward(self, y, t):  # type: ignore[override]
         if not _TORCH_AVAILABLE:
             raise RuntimeError("PyTorch not available")
-        t_expand = t.expand(y.shape[0], 1) if t.dim() == 0 else t.unsqueeze(-1)
+        if t.dim() == 0:
+            t_expand = t.expand(y.shape[0], 1)
+        elif t.dim() == 1:
+            t_expand = t.unsqueeze(-1)
+        else:
+            t_expand = t
         return self.net(torch.cat([y, t_expand], dim=-1))
 
 
@@ -272,8 +288,20 @@ def _train_neural_ode(
     opt = torch.optim.Adam(dynamics.parameters(), lr=lr)
     loss_fn = nn.MSELoss()
 
-    feat_arrays = [table.column(c).to_pylist() for c in feature_columns]
-    tgt_array = table.column(target_column).to_pylist()
+    import math
+    feat_arrays = [[float("nan") if v is None else float(v)
+                    for v in table.column(c).to_pylist()]
+                   for c in feature_columns]
+    tgt_array = [float("nan") if v is None else float(v)
+                 for v in table.column(target_column).to_pylist()]
+    n_raw = len(tgt_array)
+    valid = [i for i in range(n_raw)
+             if not math.isnan(tgt_array[i])
+             and all(not math.isnan(feat_arrays[j][i]) for j in range(len(feature_columns)))]
+    if not valid:
+        raise ValueError("NeuralODE trainer: all rows contain NaN — cannot train")
+    feat_arrays = [[fa[i] for i in valid] for fa in feat_arrays]
+    tgt_array = [tgt_array[i] for i in valid]
     n = len(tgt_array)
     X = torch.tensor(feat_arrays, dtype=torch.float32).T   # (n, dim)
     y = torch.tensor(tgt_array, dtype=torch.float32).unsqueeze(1)
@@ -331,7 +359,7 @@ def _export_neural_ode_onnx(model_id: str, model_output_dir: str, onnx_path: str
     dynamics = _NeuralOdeDynamics(dim=dim, hidden=hidden)
 
     weights = Path(model_output_dir) / model_id / "dynamics.pt"
-    dynamics.load_state_dict(torch.load(str(weights), map_location="cpu"))
+    dynamics.load_state_dict(torch.load(str(weights), map_location="cpu", weights_only=True))
     dynamics.eval()
 
     # Export f(y, t) — dynamics network only (RULE-070)
@@ -342,7 +370,7 @@ def _export_neural_ode_onnx(model_id: str, model_output_dir: str, onnx_path: str
         dynamics,
         (dummy_y, dummy_t),
         onnx_path,
-        opset_version=opset if opset > 0 else 21,
+        opset_version=min(opset if opset > 0 else 20, 20),
         input_names=["y", "t"],
         output_names=["dydt"],
         dynamic_axes={"y": {0: "batch"}, "t": {0: "batch"}, "dydt": {0: "batch"}},
@@ -375,32 +403,60 @@ def _predict(model_id: str, model_output_dir: str, table: pa.Table) -> pa.Table:
         # Stub: 48h deterministic (matches Phase 2 contract)
         values = pa.array([48.0] * n, type=pa.float32())
     elif meta["model_type"] == "TFT":
-        model = _SimpleTftModel(
-            input_size=table.num_columns,
-            hidden=meta.get("hidden", 64),
-        )
+        # Use stored input_size (not table.num_columns) — prediction frame may include target col.
+        import math
+        input_size = meta["input_size"]
+        feat_names = table.schema.names[:input_size]
+        # Replace Arrow null (None) with NaN; predict only on valid rows, NaN elsewhere.
+        feat_lists = [[float("nan") if v is None else float(v)
+                       for v in table.column(c).to_pylist()]
+                      for c in feat_names]
+        valid = [i for i in range(n)
+                 if all(not math.isnan(feat_lists[j][i]) for j in range(input_size))]
+        model = _SimpleTftModel(input_size=input_size, hidden=meta.get("hidden", 64))
         weights = Path(model_output_dir) / model_id / "model.pt"
-        model.load_state_dict(torch.load(str(weights), map_location="cpu"))
+        model.load_state_dict(torch.load(str(weights), map_location="cpu", weights_only=True))
         model.eval()
-        X = torch.tensor(
-            [table.column(c).to_pylist() for c in table.schema.names],
-            dtype=torch.float32,
-        ).T.unsqueeze(1)
-        with torch.no_grad():
-            raw = model(X).squeeze(-1).tolist()
+        if valid:
+            X_v = torch.tensor(
+                [[feat_lists[j][i] for i in valid] for j in range(input_size)],
+                dtype=torch.float32,
+            ).T.unsqueeze(1)
+            with torch.no_grad():
+                raw_v = model(X_v).squeeze(-1).tolist()
+        else:
+            raw_v = []
+        raw = [float("nan")] * n
+        for out_pos, row_idx in enumerate(valid):
+            raw[row_idx] = raw_v[out_pos]
         values = pa.array(raw, type=pa.float32())
     elif meta["model_type"] == "NeuralOde":
-        dynamics = _NeuralOdeDynamics(dim=table.num_columns, hidden=meta.get("hidden", 64))
+        # Use stored dim (not table.num_columns) — prediction frame may include target col.
+        import math
+        dim = meta["dim"]
+        feat_names = table.schema.names[:dim]
+        feat_lists = [[float("nan") if v is None else float(v)
+                       for v in table.column(c).to_pylist()]
+                      for c in feat_names]
+        valid = [i for i in range(n)
+                 if all(not math.isnan(feat_lists[j][i]) for j in range(dim))]
+        dynamics = _NeuralOdeDynamics(dim=dim, hidden=meta.get("hidden", 64))
         weights = Path(model_output_dir) / model_id / "dynamics.pt"
-        dynamics.load_state_dict(torch.load(str(weights), map_location="cpu"))
+        dynamics.load_state_dict(torch.load(str(weights), map_location="cpu", weights_only=True))
         dynamics.eval()
-        X = torch.tensor(
-            [table.column(c).to_pylist() for c in table.schema.names],
-            dtype=torch.float32,
-        ).T
-        t = torch.zeros(n, 1)
-        with torch.no_grad():
-            raw = dynamics(X, t).mean(dim=-1).tolist()
+        if valid:
+            X_v = torch.tensor(
+                [[feat_lists[j][i] for i in valid] for j in range(dim)],
+                dtype=torch.float32,
+            ).T
+            t_v = torch.zeros(len(valid), 1)
+            with torch.no_grad():
+                raw_v = dynamics(X_v, t_v).mean(dim=-1).tolist()
+        else:
+            raw_v = []
+        raw = [float("nan")] * n
+        for out_pos, row_idx in enumerate(valid):
+            raw[row_idx] = raw_v[out_pos]
         values = pa.array(raw, type=pa.float32())
     else:
         raise ValueError(f"Unknown model_type in meta: {meta['model_type']!r}")

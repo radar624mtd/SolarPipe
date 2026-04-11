@@ -10,4 +10,6 @@ public static class ExitCodes
     public const int UnknownCommand = 5;
     public const int MissingArguments = 6;
     public const int CheckpointCorrupt = 7;
+    public const int PreFlightFailed   = 8;
+    public const int SweepFailed       = 9;
 }

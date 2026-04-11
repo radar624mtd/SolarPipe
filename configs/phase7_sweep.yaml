@@ -1,0 +1,79 @@
+sweep:
+  name: phase7_hypothesis_sweep
+  parallel: true
+  log_tag_prefix: "sweep"
+  cv:
+    strategy: expanding_window
+    folds: 5
+    gap_buffer_days: 5
+    min_test_events: 50
+    calibration_fold: last
+
+  hypotheses:
+    - id: H1
+      compose: "drag_baseline ^ rf_correction"
+      stages: [drag_baseline, rf_correction]
+    - id: H2
+      compose: "burton_ode ^ rf_correction"
+      stages: [burton_ode, rf_correction]
+    - id: H3
+      compose: "drag_baseline + burton_ode"
+      stages: [drag_baseline, burton_ode]
+    - id: H4
+      compose: "(drag_baseline + burton_ode) ^ rf_correction"
+      stages: [drag_baseline, burton_ode, rf_correction]
+    - id: H5
+      compose: "drag_baseline ? (rf_correction, burton_ode)"
+      stages: [drag_baseline, rf_correction, burton_ode]
+    - id: H6
+      compose: "drag_baseline -> rf_correction"
+      stages: [drag_baseline, rf_correction]
+    - id: H7
+      compose: "drag_baseline ^ tft_correction"
+      stages: [drag_baseline, tft_correction]
+
+stages:
+  drag_baseline:
+    framework: Physics
+    model_type: DragBased
+    features: [cme_speed_kms, sw_speed_ambient_kms]
+    target: transit_time_hours
+    hyperparameters:
+      drag_parameter: 0.2e-7
+      background_speed_km_s: 400
+      r_start_rs: 21.5
+      r_stop_rs: 215.0
+      solver: dormand_prince
+
+  burton_ode:
+    framework: Physics
+    model_type: BurtonOde
+    features: [cme_speed_kms, bz_gsm_proxy_nt, sw_density_n_cc, sw_speed_ambient_kms]
+    target: transit_time_hours
+    hyperparameters:
+      solver: dormand_prince
+
+  rf_correction:
+    framework: MlNet
+    model_type: FastForest
+    features: [cme_speed_kms, bz_gsm_proxy_nt, sw_density_n_cc,
+               sw_speed_ambient_kms, delta_v_kms, sw_bt_nt,
+               speed_ratio, speed_x_bz, speed_x_density]
+    target: transit_time_hours
+    hyperparameters:
+      number_of_trees: 100
+      number_of_leaves: 20
+      feature_fraction: 0.7
+
+  tft_correction:
+    framework: PythonGrpc
+    model_type: TFT
+    features: [cme_speed_kms, bz_gsm_proxy_nt, sw_density_n_cc,
+               sw_speed_ambient_kms, delta_v_kms, sw_bt_nt,
+               speed_ratio, speed_x_bz, speed_x_density]
+    target: transit_time_hours
+    hyperparameters:
+      hidden_size: 64
+      attention_heads: 4
+      dropout: 0.1
+      max_epochs: 100

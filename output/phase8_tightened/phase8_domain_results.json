@@ -1,0 +1,400 @@
+{
+  "pipeline_name": "phase8_live_eval_tightened",
+  "generated_at": "2026-04-10T18:31:58.7132637Z",
+  "phase7_h1_reference": 20.259,
+  "mean_mae_transit": 18.488441098120905,
+  "mean_mae_dst": 48.12937908787881,
+  "mean_mae_duration": 2.761303993963426,
+  "mean_mae_physics_baseline": 19.208971208141698,
+  "ccmc_4event_mae": 15.973962783813477,
+  "folds": [
+    {
+      "fold": 0,
+      "mae_transit": 18.488441098120905,
+      "mae_dst": 48.12937908787881,
+      "mae_duration": 2.761303993963426,
+      "mae_physics_baseline": 19.208971208141698
+    }
+  ],
+  "ccmc_comparison": [
+    {
+      "cme_id": "2026-01-18T18:09:00\u002B00:00",
+      "obs_transit_h": 25.5,
+      "ccmc_model": "ELEvo",
+      "ccmc_mae_h": 7.8,
+      "our_pred_h": 48.65058,
+      "our_error_h": 23.150581,
+      "our_vs_ccmc": 15.350581
+    },
+    {
+      "cme_id": "2026-03-18T09:23:00\u002B00:00",
+      "obs_transit_h": 59.9,
+      "ccmc_model": "SIDC",
+      "ccmc_mae_h": 3.2,
+      "our_pred_h": 80.455246,
+      "our_error_h": 20.555244,
+      "our_vs_ccmc": 17.355244
+    },
+    {
+      "cme_id": "2026-03-30T03:24:00\u002B00:00",
+      "obs_transit_h": 56.1,
+      "ccmc_model": "ELEvo",
+      "ccmc_mae_h": 19.9,
+      "our_pred_h": 47.814945,
+      "our_error_h": 8.285053,
+      "our_vs_ccmc": -11.614946
+    },
+    {
+      "cme_id": "2026-04-01T23:45:00\u002B00:00",
+      "obs_transit_h": 40.1,
+      "ccmc_model": "Median",
+      "ccmc_mae_h": 8.6,
+      "our_pred_h": 52.00497,
+      "our_error_h": 11.904972,
+      "our_vs_ccmc": 3.3049717
+    }
+  ],
+  "per_event": [
+    {
+      "launch_time_unix": 1.7672961E+09,
+      "launch_time_utc": "2026-01-01T19:35:28.0000000\u002B00:00",
+      "obs_transit_h": 73.083336,
+      "pred_transit_h": 63.729618,
+      "error_transit_h": -9.353718,
+      "abs_error_h": 9.353718,
+      "physics_transit_h": 67.57076,
+      "obs_dst_nt": -31,
+      "pred_dst_nt": -59.127472
+    },
+    {
+      "launch_time_unix": 1.7676648E+09,
+      "launch_time_utc": "2026-01-06T01:59:28.0000000\u002B00:00",
+      "obs_transit_h": 50.95,
+      "pred_transit_h": 60.588837,
+      "error_transit_h": 9.638836,
+      "abs_error_h": 9.638836,
+      "physics_transit_h": 55.566677,
+      "obs_dst_nt": -36,
+      "pred_dst_nt": -85.21963
+    },
+    {
+      "launch_time_unix": 1.7678515E+09,
+      "launch_time_utc": "2026-01-08T05:52:00.0000000\u002B00:00",
+      "obs_transit_h": 61.716667,
+      "pred_transit_h": 43.516777,
+      "error_transit_h": -18.19989,
+      "abs_error_h": 18.19989,
+      "physics_transit_h": 51.974663,
+      "obs_dst_nt": -74,
+      "pred_dst_nt": -48.099876
+    },
+    {
+      "launch_time_unix": 1.7678872E+09,
+      "launch_time_utc": "2026-01-08T15:47:12.0000000\u002B00:00",
+      "obs_transit_h": 51.8,
+      "pred_transit_h": 49.90257,
+      "error_transit_h": -1.8974304,
+      "abs_error_h": 1.8974304,
+      "physics_transit_h": 56.34073,
+      "obs_dst_nt": -74,
+      "pred_dst_nt": -88.6929
+    },
+    {
+      "launch_time_unix": 1.7678916E+09,
+      "launch_time_utc": "2026-01-08T16:59:44.0000000\u002B00:00",
+      "obs_transit_h": 50.6,
+      "pred_transit_h": 46.622925,
+      "error_transit_h": -3.9770737,
+      "abs_error_h": 3.9770737,
+      "physics_transit_h": 50.934258,
+      "obs_dst_nt": -74,
+      "pred_dst_nt": -33.811573
+    },
+    {
+      "launch_time_unix": 1.7678924E+09,
+      "launch_time_utc": "2026-01-08T17:12:32.0000000\u002B00:00",
+      "obs_transit_h": 50.4,
+      "pred_transit_h": 41.306084,
+      "error_transit_h": -9.093918,
+      "abs_error_h": 9.093918,
+      "physics_transit_h": 50.24222,
+      "obs_dst_nt": -74,
+      "pred_dst_nt": -34.494137
+    },
+    {
+      "launch_time_unix": 1.7680616E+09,
+      "launch_time_utc": "2026-01-10T16:12:48.0000000\u002B00:00",
+      "obs_transit_h": 218.71666,
+      "pred_transit_h": 178.15784,
+      "error_transit_h": -40.558823,
+      "abs_error_h": 40.558823,
+      "physics_transit_h": 127.180405,
+      "obs_dst_nt": -236,
+      "pred_dst_nt": -53.673893
+    },
+    {
+      "launch_time_unix": 1.7680773E+09,
+      "launch_time_utc": "2026-01-10T20:35:12.0000000\u002B00:00",
+      "obs_transit_h": 65.11667,
+      "pred_transit_h": 45.421486,
+      "error_transit_h": -19.695183,
+      "abs_error_h": 19.695183,
+      "physics_transit_h": 51.214375,
+      "obs_dst_nt": -29,
+      "pred_dst_nt": -55.8248
+    },
+    {
+      "launch_time_unix": 1.7680781E+09,
+      "launch_time_utc": "2026-01-10T20:48:00.0000000\u002B00:00",
+      "obs_transit_h": 64.916664,
+      "pred_transit_h": 58.67613,
+      "error_transit_h": -6.2405357,
+      "abs_error_h": 6.2405357,
+      "physics_transit_h": 58.65011,
+      "obs_dst_nt": -29,
+      "pred_dst_nt": -79.584076
+    },
+    {
+      "launch_time_unix": 1.768167E+09,
+      "launch_time_utc": "2026-01-11T21:30:40.0000000\u002B00:00",
+      "obs_transit_h": 100.166664,
+      "pred_transit_h": 88.65875,
+      "error_transit_h": -11.507912,
+      "abs_error_h": 11.507912,
+      "physics_transit_h": 85.815926,
+      "obs_dst_nt": -31,
+      "pred_dst_nt": -97.0574
+    },
+    {
+      "launch_time_unix": 1.7687597E+09,
+      "launch_time_utc": "2026-01-18T18:08:00.0000000\u002B00:00",
+      "obs_transit_h": 24.766666,
+      "pred_transit_h": 48.65058,
+      "error_transit_h": 23.883915,
+      "abs_error_h": 23.883915,
+      "physics_transit_h": 42.79159,
+      "obs_dst_nt": -236,
+      "pred_dst_nt": -60.331474
+    },
+    {
+      "launch_time_unix": 1.7696908E+09,
+      "launch_time_utc": "2026-01-29T12:45:52.0000000\u002B00:00",
+      "obs_transit_h": 145.58333,
+      "pred_transit_h": 120.00299,
+      "error_transit_h": -25.580338,
+      "abs_error_h": 25.580338,
+      "physics_transit_h": 106.23331,
+      "obs_dst_nt": -70,
+      "pred_dst_nt": -37.539997
+    },
+    {
+      "launch_time_unix": 1.7699932E+09,
+      "launch_time_utc": "2026-02-02T00:46:56.0000000\u002B00:00",
+      "obs_transit_h": 61.533333,
+      "pred_transit_h": 76.277626,
+      "error_transit_h": 14.744293,
+      "abs_error_h": 14.744293,
+      "physics_transit_h": 70.347084,
+      "obs_dst_nt": -70,
+      "pred_dst_nt": -37.47808
+    },
+    {
+      "launch_time_unix": 1.7707817E+09,
+      "launch_time_utc": "2026-02-11T03:48:16.0000000\u002B00:00",
+      "obs_transit_h": 87.85,
+      "pred_transit_h": 85.08612,
+      "error_transit_h": -2.7638779,
+      "abs_error_h": 2.7638779,
+      "physics_transit_h": 81.79058,
+      "obs_dst_nt": -57,
+      "pred_dst_nt": -39.923157
+    },
+    {
+      "launch_time_unix": 1.771251E+09,
+      "launch_time_utc": "2026-02-16T14:09:04.0000000\u002B00:00",
+      "obs_transit_h": 104.45,
+      "pred_transit_h": 88.47203,
+      "error_transit_h": -15.977966,
+      "abs_error_h": 15.977966,
+      "physics_transit_h": 83.559326,
+      "obs_dst_nt": -52,
+      "pred_dst_nt": -90.40495
+    },
+    {
+      "launch_time_unix": 1.7713865E+09,
+      "launch_time_utc": "2026-02-18T03:48:16.0000000\u002B00:00",
+      "obs_transit_h": 82.63333,
+      "pred_transit_h": 90.074394,
+      "error_transit_h": 7.441063,
+      "abs_error_h": 7.441063,
+      "physics_transit_h": 77.1645,
+      "obs_dst_nt": -52,
+      "pred_dst_nt": -61.7248
+    },
+    {
+      "launch_time_unix": 1.773383E+09,
+      "launch_time_utc": "2026-03-13T06:24:00.0000000\u002B00:00",
+      "obs_transit_h": 181.88333,
+      "pred_transit_h": 145.8352,
+      "error_transit_h": -36.048126,
+      "abs_error_h": 36.048126,
+      "physics_transit_h": 122.79878,
+      "obs_dst_nt": -97,
+      "pred_dst_nt": -29.93679
+    },
+    {
+      "launch_time_unix": 1.7734061E+09,
+      "launch_time_utc": "2026-03-13T12:48:00.0000000\u002B00:00",
+      "obs_transit_h": 156.71666,
+      "pred_transit_h": 137.15182,
+      "error_transit_h": -19.564835,
+      "abs_error_h": 19.564835,
+      "physics_transit_h": 116.30658,
+      "obs_dst_nt": -85,
+      "pred_dst_nt": -29.106369
+    },
+    {
+      "launch_time_unix": 1.773724E+09,
+      "launch_time_utc": "2026-03-17T05:07:12.0000000\u002B00:00",
+      "obs_transit_h": 68.38333,
+      "pred_transit_h": 91.602875,
+      "error_transit_h": 23.219543,
+      "abs_error_h": 23.219543,
+      "physics_transit_h": 87.64917,
+      "obs_dst_nt": -85,
+      "pred_dst_nt": -33.151352
+    },
+    {
+      "launch_time_unix": 1.7737295E+09,
+      "launch_time_utc": "2026-03-17T06:38:56.0000000\u002B00:00",
+      "obs_transit_h": 66.88333,
+      "pred_transit_h": 85.567635,
+      "error_transit_h": 18.684303,
+      "abs_error_h": 18.684303,
+      "physics_transit_h": 81.53188,
+      "obs_dst_nt": -85,
+      "pred_dst_nt": -31.677837
+    },
+    {
+      "launch_time_unix": 1.7737358E+09,
+      "launch_time_utc": "2026-03-17T08:23:28.0000000\u002B00:00",
+      "obs_transit_h": 65.13333,
+      "pred_transit_h": 92.96884,
+      "error_transit_h": 27.83551,
+      "abs_error_h": 27.83551,
+      "physics_transit_h": 86.79501,
+      "obs_dst_nt": -85,
+      "pred_dst_nt": -30.723696
+    },
+    {
+      "launch_time_unix": 1.7737448E+09,
+      "launch_time_utc": "2026-03-17T10:52:48.0000000\u002B00:00",
+      "obs_transit_h": 62.633335,
+      "pred_transit_h": 141.51793,
+      "error_transit_h": 78.8846,
+      "abs_error_h": 78.8846,
+      "physics_transit_h": 116.65757,
+      "obs_dst_nt": -85,
+      "pred_dst_nt": -29.64695
+    },
+    {
+      "launch_time_unix": 1.7738258E+09,
+      "launch_time_utc": "2026-03-18T09:23:12.0000000\u002B00:00",
+      "obs_transit_h": 58.9,
+      "pred_transit_h": 80.455246,
+      "error_transit_h": 21.555244,
+      "abs_error_h": 21.555244,
+      "physics_transit_h": 61.986355,
+      "obs_dst_nt": -97,
+      "pred_dst_nt": -32.639114
+    },
+    {
+      "launch_time_unix": 1.7741966E+09,
+      "launch_time_utc": "2026-03-22T16:23:28.0000000\u002B00:00",
+      "obs_transit_h": 61.5,
+      "pred_transit_h": 74.498276,
+      "error_transit_h": 12.998276,
+      "abs_error_h": 12.998276,
+      "physics_transit_h": 65.939964,
+      "obs_dst_nt": -29,
+      "pred_dst_nt": -31.717783
+    },
+    {
+      "launch_time_unix": 1.7742218E+09,
+      "launch_time_utc": "2026-03-22T23:23:44.0000000\u002B00:00",
+      "obs_transit_h": 54.483334,
+      "pred_transit_h": 68.25325,
+      "error_transit_h": 13.769917,
+      "abs_error_h": 13.769917,
+      "physics_transit_h": 61.61524,
+      "obs_dst_nt": -29,
+      "pred_dst_nt": -31.387829
+    },
+    {
+      "launch_time_unix": 1.7744536E+09,
+      "launch_time_utc": "2026-03-25T15:47:12.0000000\u002B00:00",
+      "obs_transit_h": 163.68333,
+      "pred_transit_h": 136.88934,
+      "error_transit_h": -26.793991,
+      "abs_error_h": 26.793991,
+      "physics_transit_h": 115.24134,
+      "obs_dst_nt": -70,
+      "pred_dst_nt": -28.83204
+    },
+    {
+      "launch_time_unix": 1.7746611E+09,
+      "launch_time_utc": "2026-03-28T01:25:20.0000000\u002B00:00",
+      "obs_transit_h": 106.05,
+      "pred_transit_h": 98.94107,
+      "error_transit_h": -7.1089325,
+      "abs_error_h": 7.1089325,
+      "physics_transit_h": 94.183975,
+      "obs_dst_nt": -70,
+      "pred_dst_nt": -30.027565
+    },
+    {
+      "launch_time_unix": 1.7747177E+09,
+      "launch_time_utc": "2026-03-28T17:08:16.0000000\u002B00:00",
+      "obs_transit_h": 141.88333,
+      "pred_transit_h": 114.7233,
+      "error_transit_h": -27.160034,
+      "abs_error_h": 27.160034,
+      "physics_transit_h": 114.339386,
+      "obs_dst_nt": -82,
+      "pred_dst_nt": -29.410757
+    },
+    {
+      "launch_time_unix": 1.7748411E+09,
+      "launch_time_utc": "2026-03-30T03:24:48.0000000\u002B00:00",
+      "obs_transit_h": 56.083332,
+      "pred_transit_h": 47.814945,
+      "error_transit_h": -8.268387,
+      "abs_error_h": 8.268387,
+      "physics_transit_h": 39.798294,
+      "obs_dst_nt": -70,
+      "pred_dst_nt": -38.11424
+    },
+    {
+      "launch_time_unix": 1.7750202E+09,
+      "launch_time_utc": "2026-04-01T05:09:20.0000000\u002B00:00",
+      "obs_transit_h": 57.883335,
+      "pred_transit_h": 75.8569,
+      "error_transit_h": 17.973568,
+      "abs_error_h": 17.973568,
+      "physics_transit_h": 67.95268,
+      "obs_dst_nt": -82,
+      "pred_dst_nt": -34.599728
+    },
+    {
+      "launch_time_unix": 1.7750871E+09,
+      "launch_time_utc": "2026-04-01T23:45:04.0000000\u002B00:00",
+      "obs_transit_h": 39.283333,
+      "pred_transit_h": 52.00497,
+      "error_transit_h": 12.721638,
+      "abs_error_h": 12.721638,
+      "physics_transit_h": 47.234444,
+      "obs_dst_nt": -82,
+      "pred_dst_nt": -39.512264
+    }
+  ]
+}

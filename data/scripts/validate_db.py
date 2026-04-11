@@ -53,6 +53,7 @@ _EXPECTED_FLUX_ROPE_COLS = {
 _EXPECTED_L1_ARRIVALS_COLS = {
     "event_id", "shock_arrival_time", "icme_start_time", "icme_end_time",
     "transit_time_hours", "dst_min_nT", "kp_max", "has_in_situ_fit",
+    "icme_match_method", "icme_match_confidence",
 }
 
 _EXPECTED_PARQUET_COLS = {

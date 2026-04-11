@@ -103,6 +103,11 @@ class OutputL1Arrival(OutputBase):
     dst_min_nT: float = Column(Float, nullable=True)
     kp_max: float = Column(Float, nullable=True)
     has_in_situ_fit: int = Column(Integer, nullable=False, default=0)
+    # Match provenance — carried through from staging so downstream consumers
+    # can distinguish DONKI-linked progenitors from transit-window guesses
+    # and drop ghost rows in merged-CME clusters.
+    icme_match_method: str = Column(String, nullable=True)
+    icme_match_confidence: float = Column(Float, nullable=True)
 
 
 class OutputSchemaVersion(OutputBase):
@@ -194,14 +199,16 @@ def _build_flux_rope_fit(fv: dict) -> dict:
 def _build_l1_arrival(fv: dict) -> dict:
     has_fit = 1 if (fv.get("icme_arrival_time") and fv.get("dst_min_nt") is not None) else 0
     return {
-        "event_id":           fv["activity_id"],
-        "shock_arrival_time": fv.get("icme_arrival_time"),    # IPS event_time as shock proxy
-        "icme_start_time":    fv.get("icme_arrival_time"),
-        "icme_end_time":      None,                            # not tracked
-        "transit_time_hours": fv.get("transit_time_hours"),
-        "dst_min_nT":         fv.get("dst_min_nt"),
-        "kp_max":             fv.get("kp_max"),
-        "has_in_situ_fit":    has_fit,
+        "event_id":              fv["activity_id"],
+        "shock_arrival_time":    fv.get("icme_arrival_time"),    # IPS event_time as shock proxy
+        "icme_start_time":       fv.get("icme_arrival_time"),
+        "icme_end_time":         None,                            # not tracked
+        "transit_time_hours":    fv.get("transit_time_hours"),
+        "dst_min_nT":            fv.get("dst_min_nt"),
+        "kp_max":                fv.get("kp_max"),
+        "has_in_situ_fit":       has_fit,
+        "icme_match_method":     fv.get("icme_match_method"),
+        "icme_match_confidence": fv.get("icme_match_confidence"),
     }
 
 

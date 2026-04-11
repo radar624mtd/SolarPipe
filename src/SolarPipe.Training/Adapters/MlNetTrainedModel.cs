@@ -33,7 +33,16 @@ public sealed class MlNetTrainedModel : ITrainedModel, IDisposable
 
     public Task<PredictionResult> PredictAsync(IDataFrame input, CancellationToken ct)
     {
-        var dataView = input.ToDataView(_mlContext);
+        // Narrow to the columns the model was trained on (features only — same as training).
+        // Prediction frames may contain extra or missing columns vs the training schema.
+        // Columns not present in the input are silently dropped; Concatenate will NaN-fill
+        // any truly missing features, but schema errors cause GetGetter failures at cursor time.
+        var usedColumns = _config.Features
+            .Where(c => input.Schema.HasColumn(c))
+            .Distinct()
+            .ToArray();
+        var narrowed = usedColumns.Length > 0 ? input.SelectColumns(usedColumns) : input;
+        var dataView = narrowed.ToDataView(_mlContext);
         var predictions = _model.Transform(dataView);
 
         // Extract the "Score" column produced by ML.NET regression trainers
