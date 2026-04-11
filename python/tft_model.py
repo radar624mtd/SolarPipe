@@ -458,21 +458,39 @@ class TFTTrainer:
             scheduler.step()
             train_loss = sum(epoch_losses) / len(epoch_losses)
 
-            # Validation
+            # Validation — batched to avoid WDDM TDR timeout on large val sets
             model.eval()
+            val_n = val_data["target"].shape[0]
+            val_batch = max(self.batch_size, 128)
+            val_pred_chunks = []
+            val_tgt_chunks = []
             with torch.no_grad():
-                val_preds = model(
-                    val_data["static"].to(self.device),
-                    val_data["pre_seq"].to(self.device),
-                    val_data["transit_seq"].to(self.device),
-                    val_data.get("transit_mask", torch.ones(
-                        val_data["target"].shape[0], 1, dtype=torch.bool)).to(self.device),
-                    val_data.get("existing_preds", torch.full(
-                        (val_data["target"].shape[0],
+                for vb_start in range(0, val_n, val_batch):
+                    vb_end = min(vb_start + val_batch, val_n)
+                    vb_mask_default = torch.ones(vb_end - vb_start, 1, dtype=torch.bool)
+                    vb_ep_default = torch.full(
+                        (vb_end - vb_start,
                          self.model_kwargs.get("n_existing_preds", 0)),
-                        float("nan"))).to(self.device),
-                )
-                val_loss = self.q_loss(val_preds, val_data["target"].to(self.device)).item()
+                        float("nan"))
+                    vb_preds = model(
+                        val_data["static"][vb_start:vb_end].to(self.device),
+                        val_data["pre_seq"][vb_start:vb_end].to(self.device),
+                        val_data["transit_seq"][vb_start:vb_end].to(self.device),
+                        val_data.get("transit_mask",
+                                     vb_mask_default)[vb_start:vb_end].to(self.device),
+                        val_data.get("existing_preds",
+                                     vb_ep_default)[vb_start:vb_end].to(self.device),
+                    )
+                    val_pred_chunks.append(vb_preds.cpu())
+                    val_tgt_chunks.append(val_data["target"][vb_start:vb_end])
+            val_preds = torch.cat(val_pred_chunks, dim=0)   # (N, Q) on CPU
+            val_tgt = torch.cat(val_tgt_chunks, dim=0)       # (N,) or (N,1) on CPU
+            # Compute pinball loss on CPU (preds already moved off GPU)
+            if val_tgt.dim() == 1:
+                val_tgt = val_tgt.unsqueeze(1)
+            q_cpu = self.q_loss.q.cpu()
+            err = val_tgt - val_preds
+            val_loss = torch.where(err >= 0, q_cpu * err, (q_cpu - 1.0) * err).mean().item()
 
             if val_loss < best_val:
                 best_val = val_loss

@@ -35,8 +35,17 @@ import lightgbm as lgb
 import numpy as np
 import pyarrow.parquet as pq
 
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / ".claude" / "worktrees" / "eloquent-benz" / "scripts"))
+# Resolve repo root: works whether run from main repo or a worktree
+_script_dir = Path(__file__).resolve().parent
+ROOT = _script_dir.parent
+# If staging.db not found at expected path, walk up to find the repo root
+if not (ROOT / "data" / "data" / "staging" / "staging.db").exists():
+    for _p in _script_dir.parents:
+        if (_p / "data" / "data" / "staging" / "staging.db").exists():
+            ROOT = _p
+            break
+sys.path.insert(0, str(_script_dir))
+sys.path.insert(0, str(ROOT / "python"))
 
 STAGING_DB = ROOT / "data" / "data" / "staging" / "staging.db"
 SEQ_DIR = ROOT / "data" / "sequences"

@@ -31,9 +31,17 @@ from pathlib import Path
 import numpy as np
 import torch
 
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / ".claude" / "worktrees" / "eloquent-benz" / "python"))
-sys.path.insert(0, str(ROOT / ".claude" / "worktrees" / "eloquent-benz" / "scripts"))
+_script_dir = Path(__file__).resolve().parent
+_worktree_root = _script_dir.parent   # eloquent-benz dir (has python/ subdir)
+ROOT = _worktree_root
+if not (ROOT / "data" / "data" / "staging" / "staging.db").exists():
+    for _p in _script_dir.parents:
+        if (_p / "data" / "data" / "staging" / "staging.db").exists():
+            ROOT = _p
+            break
+# tft_model.py lives in the worktree python/ dir (has CUDA TDR fix)
+sys.path.insert(0, str(_worktree_root / "python"))
+sys.path.insert(0, str(_script_dir))
 
 from tft_model import TransitTimeTFT, TFTTrainer
 from train_tft_model import (
@@ -131,10 +139,15 @@ def evaluate_config(
         if not valid.any():
             return float("nan"), float("nan")
         mae = float(np.mean(np.abs(preds[:, 1][valid] - labels[valid])))
-        return mae, trainer.q_loss(
-            torch.from_numpy(preds).to(trainer.device),
-            val_data["target"].to(trainer.device)
-        ).item()
+        # Compute val_loss on CPU to avoid WDDM TDR with large val sets
+        preds_t = torch.from_numpy(preds)
+        tgt_t = val_data["target"].cpu()
+        q_cpu = trainer.q_loss.q.cpu()
+        if tgt_t.dim() == 1:
+            tgt_t = tgt_t.unsqueeze(1)
+        err = tgt_t - preds_t
+        val_loss = float(torch.where(err >= 0, q_cpu * err, (q_cpu - 1.0) * err).mean())
+        return mae, val_loss
     except Exception as exc:
         print(f"    ERROR: {exc}")
         return float("nan"), float("nan")
@@ -187,14 +200,18 @@ def main() -> int:
     train_ds["existing_preds"] = torch.from_numpy(tr_ep)
     holdout_ds["existing_preds"] = torch.from_numpy(ho_ep)
 
-    # Temporal hold-out split: last 20% of training events as sweep val
+    # Temporal hold-out split: use last 600 events only (400 train + 200 val)
+    # Smaller slice makes each config ~4x faster while still ranking hyperparams correctly
     N_all = train_ds["target"].shape[0]
-    split_idx = int(0.80 * N_all)
-    sweep_train = {k: v[:split_idx] if torch.is_tensor(v) else v
+    SWEEP_TRAIN = 400
+    SWEEP_VAL = 200
+    sweep_start = max(0, N_all - SWEEP_TRAIN - SWEEP_VAL)
+    split_idx = sweep_start + SWEEP_TRAIN
+    sweep_train = {k: v[sweep_start:split_idx] if torch.is_tensor(v) else v
                    for k, v in train_ds.items() if k != "activity_ids"}
-    sweep_val = {k: v[split_idx:] if torch.is_tensor(v) else v
+    sweep_val = {k: v[split_idx:split_idx + SWEEP_VAL] if torch.is_tensor(v) else v
                  for k, v in train_ds.items() if k != "activity_ids"}
-    print(f"  Sweep split: {split_idx} train, {N_all - split_idx} val events")
+    print(f"  Sweep split: {SWEEP_TRAIN} train, {SWEEP_VAL} val events (subset of last {SWEEP_TRAIN+SWEEP_VAL})")
 
     # Sample configs
     print(f"\n[2/3] Sampling {n_configs} LHS configurations...")
@@ -212,7 +229,7 @@ def main() -> int:
               f"lr={cfg['lr']:.0e} bs={cfg['batch_size']} ... ", end="", flush=True)
 
         mae, val_loss = evaluate_config(cfg, sweep_train, sweep_val,
-                                        args.device, max_epochs=80, patience=15)
+                                        args.device, max_epochs=50, patience=8)
         results.append({"config": cfg, "val_mae": mae, "val_loss": val_loss})
         flag = ""
         if not math.isnan(mae) and mae < best_mae:

@@ -32,7 +32,13 @@ from pathlib import Path
 import numpy as np
 from scipy.optimize import nnls
 
-ROOT = Path(__file__).resolve().parents[1]
+_script_dir = Path(__file__).resolve().parent
+ROOT = _script_dir.parent
+if not (ROOT / "data" / "data" / "staging" / "staging.db").exists():
+    for _p in _script_dir.parents:
+        if (_p / "data" / "data" / "staging" / "staging.db").exists():
+            ROOT = _p
+            break
 STAGING_DB = ROOT / "data" / "data" / "staging" / "staging.db"
 OUT_DIR = ROOT / "output" / "ensemble"
 OUT_DIR.mkdir(parents=True, exist_ok=True)

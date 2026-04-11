@@ -161,7 +161,7 @@ def load_scalar_features(split: str, existing_preds: dict) -> tuple[list[str], n
     # SHARP sentinel values (usflux etc.) can be 1e20–1e22 — convert to NaN
     _SENTINEL_ABS = 9990.0
 
-    feat_arr = np.full((len(rows), N_STATIC + N_EXISTING), float("nan"), dtype=np.float32)
+    feat_arr = np.full((len(rows), N_STATIC_BASE + N_EXISTING), float("nan"), dtype=np.float32)
     for i, r in enumerate(rows):
         for j, col in enumerate(STATIC_FEATURES):
             v = r[col_idx[col]]
@@ -178,14 +178,14 @@ def load_scalar_features(split: str, existing_preds: dict) -> tuple[list[str], n
         for k, col in enumerate(EXISTING_PRED_COLS):
             v = r[col_idx[col]]
             if v is not None:
-                feat_arr[i, N_STATIC + k] = float(v)
+                feat_arr[i, N_STATIC_BASE + k] = float(v)
             elif activity_ids[i] in existing_preds:
                 vj = existing_preds[activity_ids[i]].get(col)
                 if vj is not None:
-                    feat_arr[i, N_STATIC + k] = float(vj)
+                    feat_arr[i, N_STATIC_BASE + k] = float(vj)
 
-    static_arr = feat_arr[:, :N_STATIC]
-    existing_arr = feat_arr[:, N_STATIC:]
+    static_arr = feat_arr[:, :N_STATIC_BASE]
+    existing_arr = feat_arr[:, N_STATIC_BASE:]
     return activity_ids, static_arr, existing_arr, labels
 
 
@@ -232,41 +232,45 @@ def load_sequences(split: str, activity_ids: list[str]) -> tuple[np.ndarray, np.
             "Run: python scripts/build_pinn_sequences.py"
         )
 
-    tbl = pq.read_table(str(path))
-    # Build event index
-    aid_col = tbl["activity_id"].to_pylist()
-    ts_col = tbl["timestep"].to_pylist()
-    window_col = tbl["window"].to_pylist()
-    ch_data = {ch: tbl[ch].to_pylist() for ch in SEQ_CHANNELS}
+    import pandas as pd
 
-    # Index rows by (activity_id, window, timestep)
-    row_lookup: dict[tuple, int] = {}
-    for i, (aid, window, ts) in enumerate(zip(aid_col, window_col, ts_col)):
-        row_lookup[(aid, window, ts)] = i
+    tbl = pq.read_table(str(path), columns=["activity_id", "window", "timestep"] + SEQ_CHANNELS)
+    df = tbl.to_pandas()
+
+    # Filter to only the events we need
+    aid_to_idx = {aid: i for i, aid in enumerate(activity_ids)}
+    df = df[df["activity_id"].isin(aid_to_idx)].copy()
+
+    # Map string activity_id → integer event index
+    df["event_idx"] = df["activity_id"].map(aid_to_idx).astype(np.int32)
+    df["timestep"] = df["timestep"].astype(np.int32)
 
     N = len(activity_ids)
-    pre_arr = np.full((N, PRE_LEN, N_SEQ_CH), float("nan"), dtype=np.float32)
-    transit_arr = np.full((N, TRANSIT_LEN, N_SEQ_CH), float("nan"), dtype=np.float32)
+    pre_arr = np.full((N, PRE_LEN, N_SEQ_CH_BASE), float("nan"), dtype=np.float32)
+    transit_arr = np.full((N, TRANSIT_LEN, N_SEQ_CH_BASE), float("nan"), dtype=np.float32)
     transit_mask = np.zeros((N, TRANSIT_LEN), dtype=bool)
 
-    for i, aid in enumerate(activity_ids):
-        for h in range(PRE_LEN):
-            ts = h - PRE_LEN  # -150...-1
-            row_i = row_lookup.get((aid, "pre_launch", ts))
-            if row_i is not None:
-                for c_idx, ch in enumerate(SEQ_CHANNELS):
-                    v = ch_data[ch][row_i]
-                    if v is not None and not (isinstance(v, float) and math.isnan(v)):
-                        pre_arr[i, h, c_idx] = float(v)
+    ch_vals = df[SEQ_CHANNELS].to_numpy(dtype=np.float32, na_value=float("nan"))  # (M, C)
+    ev_idx = df["event_idx"].to_numpy()
+    ts_vals = df["timestep"].to_numpy()
+    win_vals = df["window"].to_numpy()
 
-        for h in range(TRANSIT_LEN):
-            row_i = row_lookup.get((aid, "in_transit", h))
-            if row_i is not None:
-                transit_mask[i, h] = True
-                for c_idx, ch in enumerate(SEQ_CHANNELS):
-                    v = ch_data[ch][row_i]
-                    if v is not None and not (isinstance(v, float) and math.isnan(v)):
-                        transit_arr[i, h, c_idx] = float(v)
+    # Pre-launch window: timestep = h - PRE_LEN → h = timestep + PRE_LEN
+    pre_mask = win_vals == "pre_launch"
+    if pre_mask.any():
+        h_pre = ts_vals[pre_mask] + PRE_LEN
+        ei_pre = ev_idx[pre_mask]
+        valid = (h_pre >= 0) & (h_pre < PRE_LEN)
+        pre_arr[ei_pre[valid], h_pre[valid], :] = ch_vals[pre_mask][valid]
+
+    # In-transit window: timestep = h directly
+    tr_mask = win_vals == "in_transit"
+    if tr_mask.any():
+        h_tr = ts_vals[tr_mask]
+        ei_tr = ev_idx[tr_mask]
+        valid = (h_tr >= 0) & (h_tr < TRANSIT_LEN)
+        transit_arr[ei_tr[valid], h_tr[valid], :] = ch_vals[tr_mask][valid]
+        transit_mask[ei_tr[valid], h_tr[valid]] = True
 
     return pre_arr, transit_arr, transit_mask
 
@@ -301,10 +305,8 @@ def compute_sequence_derivatives(seq: np.ndarray) -> np.ndarray:
                 if T > 2:
                     deriv[:, 1:-1] = s[:, 2:] - 2 * s[:, 1:-1] + s[:, :-2]
             elif order == 3:
+                # 3rd order: d3/dt3 ≈ d2[n] - d2[n-1] (difference of 2nd differences)
                 if T > 3:
-                    deriv[:, 2:-1] = (s[:, 3:] - 2 * s[:, 2:-1] + 2 * s[:, :-3] - s[:, :-4]
-                                      if T > 4 else deriv[:, 2:-1])
-                    # Simpler 3rd order: d3/dt3 ≈ d2[n]-d2[n-1]
                     d2 = np.full_like(s, float("nan"))
                     if T > 2:
                         d2[:, 1:-1] = s[:, 2:] - 2 * s[:, 1:-1] + s[:, :-2]
