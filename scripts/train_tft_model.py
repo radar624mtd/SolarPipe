@@ -364,7 +364,7 @@ def compute_metrics(preds_p50: np.ndarray, labels: np.ndarray) -> dict:
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--epochs", type=int, default=50)
+    ap.add_argument("--epochs", type=int, default=150)
     ap.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     ap.add_argument("--folds", type=int, default=5)
     ap.add_argument("--validate-only", action="store_true")
@@ -509,12 +509,32 @@ def main() -> int:
             torch.save(model.state_dict(), str(MODEL_DIR / f"tft_v1_fold{fold_i+1}.pt"))
             print(f"    new best model saved (fold {fold_i+1})")
 
-    print("\n[4/4] Evaluating on holdout...")
+    print("\n[4/4] Final training on all train data + holdout evaluation...")
     if best_model is None:
         print("ERROR: no model trained")
         return 1
 
-    holdout_preds = trainer.predict(best_model, holdout_ds).numpy()  # (90, 3)
+    # Train a final model on all 1,884 training events using best fold as warm start.
+    # Use 10% of train as a mini validation set to monitor convergence (chronological tail).
+    N_all = train_ds["target"].shape[0]
+    split_idx = int(0.9 * N_all)
+    all_train = {k: v[:split_idx] if torch.is_tensor(v) else v
+                 for k, v in train_ds.items() if k != "activity_ids"}
+    all_val = {k: v[split_idx:] if torch.is_tensor(v) else v
+               for k, v in train_ds.items() if k != "activity_ids"}
+
+    print(f"  Full-data fit: {split_idx} train, {N_all - split_idx} val, {args.epochs} epochs")
+
+    def final_progress_cb(epoch, tl, vl):
+        if epoch % 10 == 0:
+            print(f"    epoch {epoch:3d}: train={tl:.4f} val={vl:.4f}")
+
+    import threading
+    final_model = trainer.train_fold(all_train, all_val, final_progress_cb, threading.Event())
+    torch.save(final_model.state_dict(), str(MODEL_DIR / "tft_v1_final.pt"))
+    print("  Final model saved.")
+
+    holdout_preds = trainer.predict(final_model, holdout_ds).numpy()  # (90, 3)
     holdout_labels = holdout_ds["target"].squeeze().numpy()
     holdout_ids = holdout_ds["activity_ids"]
 
