@@ -52,6 +52,18 @@ try:
 except ImportError:
     _TORCH_AVAILABLE = False
 
+# Import full TFT implementation (requires PyTorch + tft_model.py in same dir)
+_TFT_TRANSIT_AVAILABLE = False
+if _TORCH_AVAILABLE:
+    try:
+        import sys as _sys
+        import os as _os
+        _sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+        from tft_model import TransitTimeTFT, TFTTrainer  # noqa: E402
+        _TFT_TRANSIT_AVAILABLE = True
+    except ImportError as _tft_err:
+        _tft_transit_err_msg = str(_tft_err)
+
 # ─── Structured JSON logging to logs/python_latest.json (ADR-010) ────────────
 
 def _make_json_formatter() -> logging.Formatter:
@@ -241,6 +253,300 @@ def _train_tft(
     return model_id
 
 
+# ─── TFT_TRANSIT trainer (full sequence-aware TFT — Phase 3+4) ───────────────
+
+def _load_sequences_for_ids(sequences_path: str, activity_ids: list[str],
+                             split: str) -> dict:
+    """Load pre-launch + in-transit tensors from Parquet for the given activity_ids.
+
+    Returns dict with keys:
+        pre_seq:      (N, 150, 20) float32 tensor
+        transit_seq:  (N, 72, 20)  float32 tensor  (NaN-padded where shorter)
+        transit_mask: (N, 72)      bool tensor
+        has_full_omni: (N,)        bool tensor
+    """
+    import pyarrow.parquet as pq
+    import numpy as np
+
+    SEQ_CHANNELS = [
+        "Bz_GSM", "flow_speed", "proton_density", "flow_pressure", "AE_nT",
+        "Dst_nT", "Kp_x10", "B_scalar_avg", "By_GSM", "electric_field",
+        "plasma_beta", "alfven_mach", "sigma_Bz", "sigma_N", "sigma_V",
+        "flow_longitude", "flow_latitude", "alpha_proton_ratio", "F10_7_index",
+        "Bx_GSE",
+    ]
+    PRE_LEN = 150
+    TRANSIT_LEN = 72
+    C = len(SEQ_CHANNELS)  # 20
+
+    seq_file = str(Path(sequences_path) / f"{split}_sequences.parquet")
+    tbl = pq.read_table(seq_file)
+
+    aid_index: dict[str, int] = {aid: i for i, aid in enumerate(activity_ids)}
+    N = len(activity_ids)
+
+    pre_np = np.full((N, PRE_LEN, C), float("nan"), dtype=np.float32)
+    transit_np = np.full((N, TRANSIT_LEN, C), float("nan"), dtype=np.float32)
+    has_full_omni = np.zeros(N, dtype=bool)
+
+    aid_col = tbl.column("activity_id").to_pylist()
+    window_col = tbl.column("window").to_pylist()
+    timestep_col = tbl.column("timestep").to_pylist()
+    omni_col = tbl.column("has_full_omni").to_pylist()
+
+    channel_arrays = [tbl.column(ch).to_pylist() for ch in SEQ_CHANNELS]
+
+    for row_i in range(tbl.num_rows):
+        aid = aid_col[row_i]
+        if aid not in aid_index:
+            continue
+        n_idx = aid_index[aid]
+        w = window_col[row_i]
+        ts = int(timestep_col[row_i])
+        vals = [channel_arrays[c][row_i] for c in range(C)]
+
+        if w == "pre_launch":
+            # timestep in [-150, -1] → array index ts + 150
+            t_idx = ts + PRE_LEN
+            if 0 <= t_idx < PRE_LEN:
+                pre_np[n_idx, t_idx] = [float("nan") if v is None else float(v) for v in vals]
+        elif w == "in_transit":
+            # timestep in [0, 71]
+            if 0 <= ts < TRANSIT_LEN:
+                transit_np[n_idx, ts] = [float("nan") if v is None else float(v) for v in vals]
+        if omni_col[row_i]:
+            has_full_omni[n_idx] = True
+
+    transit_mask = ~np.all(np.isnan(transit_np), axis=-1)  # (N, TRANSIT_LEN)
+
+    return {
+        "pre_seq": torch.from_numpy(pre_np),
+        "transit_seq": torch.from_numpy(transit_np),
+        "transit_mask": torch.from_numpy(transit_mask),
+        "has_full_omni": torch.from_numpy(has_full_omni),
+    }
+
+
+def _build_tft_dataset(
+    table: pa.Table,
+    feature_columns: list[str],
+    target_column: str,
+    existing_pred_columns: list[str],
+    sequences_path: str,
+    split: str,
+) -> dict:
+    """Assemble static + sequence tensors for TFTTrainer.
+
+    Returns dict with keys: static, pre_seq, transit_seq, transit_mask,
+    existing_preds, target, activity_ids
+    """
+    import numpy as np
+
+    activity_ids = [str(v) for v in table.column("activity_id").to_pylist()]
+    N = len(activity_ids)
+
+    # Static features
+    static_np = np.zeros((N, len(feature_columns)), dtype=np.float32)
+    for j, col in enumerate(feature_columns):
+        vals = table.column(col).to_pylist()
+        static_np[:, j] = [float("nan") if v is None else float(v) for v in vals]
+
+    # Target
+    target_vals = table.column(target_column).to_pylist()
+    target_np = np.array([float("nan") if v is None else float(v)
+                          for v in target_vals], dtype=np.float32)
+
+    # Existing predictions (may be NaN)
+    if existing_pred_columns:
+        ep_np = np.full((N, len(existing_pred_columns)), float("nan"), dtype=np.float32)
+        for j, col in enumerate(existing_pred_columns):
+            if col in table.schema.names:
+                vals = table.column(col).to_pylist()
+                ep_np[:, j] = [float("nan") if v is None else float(v) for v in vals]
+        existing_preds = torch.from_numpy(ep_np)
+    else:
+        existing_preds = None
+
+    # Sequences
+    seq_data = _load_sequences_for_ids(sequences_path, activity_ids, split)
+
+    return {
+        "static": torch.from_numpy(static_np),
+        "pre_seq": seq_data["pre_seq"],
+        "transit_seq": seq_data["transit_seq"],
+        "transit_mask": seq_data["transit_mask"],
+        "existing_preds": existing_preds,
+        "target": torch.from_numpy(target_np),
+        "activity_ids": activity_ids,
+    }
+
+
+def _train_tft_transit(
+    table: pa.Table,
+    feature_columns: list[str],
+    target_column: str,
+    hyperparameters: dict[str, str],
+    model_output_dir: str,
+    progress_cb,
+    ct_event: threading.Event,
+) -> str:
+    """Train the full sequence-aware TransitTimeTFT.
+
+    Expected hyperparameters:
+        sequences_path   — path to directory containing *_sequences.parquet
+        existing_preds   — comma-separated column names of existing model predictions
+        d_model          — (default 64)
+        n_heads          — (default 4)
+        n_lstm_layers    — (default 2)
+        epochs           — (default 50)
+        lr               — (default 1e-3)
+        batch_size       — (default 64)
+        device           — (default "cuda" if available else "cpu")
+    """
+    if not _TFT_TRANSIT_AVAILABLE:
+        logger.warning("TFT_TRANSIT unavailable — falling back to stub")
+        return _stub_train(table, "TFT_TRANSIT", model_output_dir)
+
+    sequences_path = hyperparameters.get(
+        "sequences_path",
+        os.environ.get("SOLARPIPE_SEQUENCES_PATH", "data/sequences")
+    )
+    if not Path(sequences_path).exists():
+        raise FileNotFoundError(
+            f"TFT_TRANSIT: sequences_path not found: {sequences_path!r}. "
+            "Set SOLARPIPE_SEQUENCES_PATH or pass sequences_path hyperparameter."
+        )
+
+    existing_pred_cols_raw = hyperparameters.get("existing_preds", "")
+    existing_pred_cols = [c.strip() for c in existing_pred_cols_raw.split(",") if c.strip()]
+
+    d_model = int(hyperparameters.get("d_model", "64"))
+    n_heads = int(hyperparameters.get("n_heads", "4"))
+    n_lstm_layers = int(hyperparameters.get("n_lstm_layers", "2"))
+    epochs = int(hyperparameters.get("epochs", "50"))
+    lr = float(hyperparameters.get("lr", "1e-3"))
+    batch_size = int(hyperparameters.get("batch_size", "64"))
+
+    device_str = hyperparameters.get(
+        "device",
+        "cuda" if torch.cuda.is_available() else "cpu"
+    )
+
+    logger.info(
+        "TFT_TRANSIT training: n_static=%d n_existing=%d device=%s epochs=%d",
+        len(feature_columns), len(existing_pred_cols), device_str, epochs,
+    )
+
+    # Determine split from table (use "train" if not present)
+    split = "train"
+    if "split" in table.schema.names:
+        splits = set(table.column("split").to_pylist())
+        split = next(iter(splits), "train")
+
+    dataset = _build_tft_dataset(
+        table, feature_columns, target_column,
+        existing_pred_cols, sequences_path, split
+    )
+
+    # Simple 80/20 temporal split for single-call Train (not fold CV)
+    N = dataset["target"].shape[0]
+    split_idx = max(1, int(0.8 * N))
+    train_data = {k: v[:split_idx] if torch.is_tensor(v) else v
+                  for k, v in dataset.items()}
+    val_data = {k: v[split_idx:] if torch.is_tensor(v) else v
+                for k, v in dataset.items()}
+
+    model_kwargs = dict(
+        n_static=len(feature_columns),
+        n_seq_channels=20,
+        n_existing_preds=len(existing_pred_cols),
+        d_model=d_model,
+        n_heads=n_heads,
+        n_lstm_layers=n_lstm_layers,
+    )
+
+    trainer = TFTTrainer(
+        model_kwargs=model_kwargs,
+        epochs=epochs,
+        lr=lr,
+        batch_size=batch_size,
+        device=device_str,
+    )
+
+    model = trainer.train_fold(train_data, val_data, progress_cb, ct_event)
+
+    import uuid
+    model_id = f"tft_transit_{uuid.uuid4().hex[:8]}"
+    out_dir = Path(model_output_dir) / model_id
+    out_dir.mkdir(parents=True, exist_ok=True)
+    torch.save(model.state_dict(), str(out_dir / "model.pt"))
+    (out_dir / "meta.json").write_text(json.dumps({
+        "model_type": "TFT_TRANSIT",
+        "model_kwargs": model_kwargs,
+        "feature_columns": feature_columns,
+        "existing_pred_columns": existing_pred_cols,
+        "sequences_path": sequences_path,
+        "epochs": epochs,
+    }))
+    logger.info("TFT_TRANSIT model saved: %s", model_id)
+    return model_id
+
+
+def _predict_tft_transit(model_id: str, model_output_dir: str, table: pa.Table) -> pa.Table:
+    """Run TFT_TRANSIT inference; returns Arrow table with transit_p10/p50/p90 columns."""
+    import numpy as np
+
+    meta_path = Path(model_output_dir) / model_id / "meta.json"
+    meta = json.loads(meta_path.read_text())
+    model_kwargs = meta["model_kwargs"]
+    feature_columns = meta["feature_columns"]
+    existing_pred_cols = meta.get("existing_pred_columns", [])
+    sequences_path = meta.get("sequences_path",
+                              os.environ.get("SOLARPIPE_SEQUENCES_PATH", "data/sequences"))
+
+    model = TransitTimeTFT(**model_kwargs)
+    weights_path = Path(model_output_dir) / model_id / "model.pt"
+    model.load_state_dict(torch.load(str(weights_path), map_location="cpu", weights_only=True))
+    model.eval()
+
+    split = "holdout"
+    if "split" in table.schema.names:
+        splits = set(table.column("split").to_pylist())
+        split = next(iter(splits), "holdout")
+
+    # Build a dummy target (unused for prediction)
+    N = table.num_rows
+    dummy_target = [0.0] * N
+    aug_table = table.append_column(
+        pa.field("_dummy_target", pa.float32()),
+        pa.array(dummy_target, type=pa.float32())
+    ) if "_dummy_target" not in table.schema.names else table
+
+    dataset = _build_tft_dataset(
+        aug_table, feature_columns, "_dummy_target",
+        existing_pred_cols, sequences_path, split
+    )
+
+    trainer = TFTTrainer(model_kwargs=model_kwargs)
+    preds = trainer.predict(model, dataset)  # (N, 3)
+
+    p10 = pa.array(preds[:, 0].numpy().astype(np.float32), type=pa.float32())
+    p50 = pa.array(preds[:, 1].numpy().astype(np.float32), type=pa.float32())
+    p90 = pa.array(preds[:, 2].numpy().astype(np.float32), type=pa.float32())
+
+    return pa.table({
+        "transit_p10": p10,
+        "transit_p50": p50,
+        "transit_p90": p90,
+        "prediction": p50,  # gRPC contract: single "prediction" column = P50
+    }, schema=pa.schema([
+        pa.field("transit_p10", pa.float32()),
+        pa.field("transit_p50", pa.float32()),
+        pa.field("transit_p90", pa.float32()),
+        pa.field("prediction", pa.float32()),
+    ]))
+
+
 # ─── NeuralODE trainer (dynamics network only — RULE-070) ────────────────────
 
 class _NeuralOdeDynamics(nn.Module if _TORCH_AVAILABLE else object):
@@ -402,6 +708,11 @@ def _predict(model_id: str, model_output_dir: str, table: pa.Table) -> pa.Table:
     if meta.get("stub") or not _TORCH_AVAILABLE:
         # Stub: 48h deterministic (matches Phase 2 contract)
         values = pa.array([48.0] * n, type=pa.float32())
+        return pa.table({"prediction": values}, schema=PREDICTION_SCHEMA)
+    elif meta["model_type"] == "TFT_TRANSIT":
+        if not _TFT_TRANSIT_AVAILABLE:
+            raise RuntimeError("TFT_TRANSIT model requires tft_model.py and PyTorch")
+        return _predict_tft_transit(model_id, model_output_dir, table)
     elif meta["model_type"] == "TFT":
         # Use stored input_size (not table.num_columns) — prediction frame may include target col.
         import math
@@ -477,7 +788,10 @@ class _PythonTrainerServicer(solarpipe_pb2_grpc.PythonTrainerServicer if _GRPC_A
         hyperparams = dict(request.hyperparameters)
         model_type = request.model_type.strip()
 
-        if model_type.upper() == "TFT":
+        if model_type.upper() == "TFT_TRANSIT":
+            return _train_tft_transit(table, features, request.target_column,
+                                      hyperparams, self._model_dir, progress_cb, ct_event)
+        elif model_type.upper() == "TFT":
             return _train_tft(table, features, request.target_column,
                               hyperparams, self._model_dir, progress_cb, ct_event)
         elif model_type.lower() in ("neuralode", "neural_ode"):

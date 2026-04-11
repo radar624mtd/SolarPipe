@@ -1,0 +1,730 @@
+"""Train the TFT neural ensemble for CME transit time prediction.
+
+Reads:
+  staging.db:pinn_expanded_flat     — 75-column scalar feature matrix
+  data/sequences/train_sequences.parquet   — 150h pre-launch + 72h in-transit
+  data/sequences/holdout_sequences.parquet — same for holdout
+
+Existing model predictions injected as ensemble head inputs:
+  output/phase8_domain_results.json    → phase8_pred_transit_hours
+  output/pinn_v1/pinn_v1_results.json  → pinn_v1_pred_transit_hours
+
+Outputs:
+  output/tft_v1/tft_v1_results.json   — per-event holdout predictions + metrics
+  models/registry/tft_v1_fold{N}.pt   — per-fold model weights
+  models/registry/tft_v1_meta.json    — architecture + feature config
+
+Usage:
+    python scripts/train_tft_model.py [--epochs 50] [--device cpu|cuda]
+                                      [--folds 5] [--validate-only]
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import math
+import os
+import sqlite3
+import sys
+from datetime import datetime
+from pathlib import Path
+
+import numpy as np
+import pyarrow.parquet as pq
+import torch
+
+# Add python/ to path for tft_model import
+sys.path.insert(0, str(Path(__file__).parent.parent / "python"))
+from tft_model import TransitTimeTFT, TFTTrainer  # noqa: E402
+
+STAGING_DB = Path("C:/Users/radar/SolarPipe/data/data/staging/staging.db")
+SEQ_DIR = Path(
+    os.environ.get("SOLARPIPE_SEQUENCES_PATH", "")
+    or "C:/Users/radar/SolarPipe/data/sequences"
+)
+OUTPUT_DIR = Path("C:/Users/radar/SolarPipe/output/tft_v1")
+MODEL_DIR = Path("C:/Users/radar/SolarPipe/models/registry")
+
+PHASE8_RESULTS = Path("C:/Users/radar/SolarPipe/output/phase8_domain_results.json")
+PINN_V1_RESULTS = Path("C:/Users/radar/SolarPipe/output/pinn_v1/pinn_v1_results.json")
+
+# ── Feature definitions ───────────────────────────────────────────────────────
+
+# All scalar features from pinn_expanded_flat (excluding metadata and label)
+STATIC_FEATURES = [
+    # Original 45-col features (numeric only)
+    "omni_24h_bz_mean", "omni_24h_bz_std", "omni_24h_bz_min",
+    "omni_24h_speed_mean", "omni_24h_density_mean", "omni_24h_pressure_mean",
+    "omni_24h_ae_max", "omni_24h_dst_min", "omni_24h_kp_max",
+    "f10_7", "cluster_id_k5", "cluster_assigned",
+    "preceding_cme_count_48h", "preceding_cme_speed_max", "preceding_cme_speed_mean",
+    "preceding_cme_angular_sep_min", "is_multi_cme",
+    "omni_48h_density_spike_max", "omni_48h_speed_gradient",
+    "cme_speed_kms", "cme_half_angle_deg", "cme_latitude", "cme_longitude",
+    "cme_angular_width_deg",
+    "cdaw_linear_speed_kms", "cdaw_angular_width_deg",
+    "cdaw_mass_log10", "cdaw_ke_log10", "cdaw_matched",
+    "flare_class_numeric", "has_flare", "flare_source_longitude",
+    "omni_150h_density_median", "omni_150h_speed_median",
+    "sw_bz_ambient", "delta_v_kms", "usflux", "sharp_available",
+    # New CDAW kinematics
+    "second_order_speed_init", "second_order_speed_final",
+    "second_order_speed_20Rs", "accel_kms2", "mpa_deg",
+    # New SHARP magnetic
+    "meangam", "meangbt", "meangbz", "meangbh",
+    "meanjzd", "totusjz", "meanjzh", "totusjh", "absnjzh",
+    "meanalp", "savncpp", "meanpot", "totpot",
+    "meanshr", "shrgt45", "r_value", "area_acr",
+    # New cluster labels
+    "cluster_id_k8", "cluster_id_k12", "cluster_id_dbscan",
+    # ENLIL
+    "enlil_predicted_arrival_hours", "enlil_au", "enlil_matched",
+]
+
+# 20 OMNI sequence channels (must match build_pinn_sequences.py OMNI_CHANNELS)
+SEQ_CHANNELS = [
+    "Bz_GSM", "flow_speed", "proton_density", "flow_pressure",
+    "AE_nT", "Dst_nT", "Kp_x10",
+    "B_scalar_avg", "By_GSM", "electric_field", "plasma_beta", "alfven_mach",
+    "sigma_Bz", "sigma_N", "sigma_V",
+    "flow_longitude", "flow_latitude", "alpha_proton_ratio",
+    "F10_7_index", "Bx_GSE",
+]
+
+# Existing model predictions (ensemble head inputs)
+EXISTING_PRED_COLS = ["phase8_pred_transit_hours", "pinn_v1_pred_transit_hours"]
+
+N_STATIC_BASE = len(STATIC_FEATURES)
+N_EXTRA_STATIC = 8   # from compute_expanded_static (log-transforms, interactions)
+N_STATIC = N_STATIC_BASE + N_EXTRA_STATIC
+
+N_SEQ_CH_BASE = len(SEQ_CHANNELS)
+N_DERIV_CH = 24      # 8 channels × 3 derivative orders
+N_SEQ_CH = N_SEQ_CH_BASE + N_DERIV_CH   # 20 + 24 = 44
+
+N_EXISTING = len(EXISTING_PRED_COLS)
+PRE_LEN = 150
+TRANSIT_LEN = 72
+
+
+# ── Data loading ─────────────────────────────────────────────────────────────
+
+def load_existing_predictions() -> dict[str, dict[str, float]]:
+    """Load Phase 8 and PINN V1 per-event predictions. Returns {activity_id: {col: val}}."""
+    preds: dict[str, dict[str, float]] = {}
+
+    if PHASE8_RESULTS.exists():
+        data = json.loads(PHASE8_RESULTS.read_text())
+        for ev in data.get("events", []):
+            aid = ev.get("activity_id") or ev.get("cme_id")
+            val = ev.get("predicted_transit_hours") or ev.get("pred_transit_hours")
+            if aid and val is not None:
+                preds.setdefault(aid, {})["phase8_pred_transit_hours"] = float(val)
+
+    if PINN_V1_RESULTS.exists():
+        data = json.loads(PINN_V1_RESULTS.read_text())
+        # Load OOF (training) + holdout predictions; both use "predicted" key
+        for section in ("oof_predictions", "holdout_predictions"):
+            for ev in data.get(section, []):
+                aid = ev.get("activity_id") or ev.get("cme_id")
+                val = ev.get("predicted") or ev.get("pred_transit_hours")
+                if aid and val is not None:
+                    preds.setdefault(aid, {})["pinn_v1_pred_transit_hours"] = float(val)
+
+    return preds
+
+
+def load_scalar_features(split: str, existing_preds: dict) -> tuple[list[str], np.ndarray, np.ndarray]:
+    """Load static features and labels from pinn_expanded_flat.
+
+    Returns: activity_ids, features (N, S) float32, labels (N,) float32
+    """
+    conn = sqlite3.connect(str(STAGING_DB))
+    cols_sql = ", ".join(STATIC_FEATURES + EXISTING_PRED_COLS + ["activity_id", "transit_time_hours"])
+    rows = conn.execute(
+        f"SELECT {cols_sql} FROM pinn_expanded_flat WHERE split=? AND exclude=0 "
+        "ORDER BY launch_time",
+        (split,),
+    ).fetchall()
+    conn.close()
+
+    col_names = STATIC_FEATURES + EXISTING_PRED_COLS + ["activity_id", "transit_time_hours"]
+    col_idx = {c: i for i, c in enumerate(col_names)}
+
+    activity_ids = [r[col_idx["activity_id"]] for r in rows]
+    labels = np.array([
+        float("nan") if r[col_idx["transit_time_hours"]] is None
+        else float(r[col_idx["transit_time_hours"]])
+        for r in rows
+    ], dtype=np.float32)
+
+    # SHARP sentinel values (usflux etc.) can be 1e20–1e22 — convert to NaN
+    _SENTINEL_ABS = 9990.0
+
+    feat_arr = np.full((len(rows), N_STATIC_BASE + N_EXISTING), float("nan"), dtype=np.float32)
+    for i, r in enumerate(rows):
+        for j, col in enumerate(STATIC_FEATURES):
+            v = r[col_idx[col]]
+            if v is not None:
+                fv = float(v)
+                if abs(fv) < _SENTINEL_ABS or col in ("cluster_id_k5", "cluster_id_k8",
+                                                        "cluster_id_k12", "cluster_id_dbscan",
+                                                        "cluster_assigned", "is_multi_cme",
+                                                        "has_flare", "sharp_available",
+                                                        "cdaw_matched", "enlil_matched"):
+                    feat_arr[i, j] = fv
+                # else: leave as NaN (sentinel)
+        # Merge existing predictions from JSON if DB column is NULL
+        for k, col in enumerate(EXISTING_PRED_COLS):
+            v = r[col_idx[col]]
+            if v is not None:
+                feat_arr[i, N_STATIC_BASE + k] = float(v)
+            elif activity_ids[i] in existing_preds:
+                vj = existing_preds[activity_ids[i]].get(col)
+                if vj is not None:
+                    feat_arr[i, N_STATIC_BASE + k] = float(vj)
+
+    static_arr = feat_arr[:, :N_STATIC_BASE]
+    existing_arr = feat_arr[:, N_STATIC_BASE:]
+    return activity_ids, static_arr, existing_arr, labels
+
+
+def impute_and_normalize(
+    train_arr: np.ndarray,
+    val_arr: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Mean imputation + z-score normalization. Fit on train, apply to val.
+
+    Returns: train_norm, val_norm, col_means (for predict time), col_stds
+    """
+    col_means = np.nanmean(train_arr, axis=0)  # (S,) — NaN if entire column is NaN
+    col_stds = np.nanstd(train_arr, axis=0)    # (S,)
+    # All-NaN columns: impute to 0, std=1 (they carry no signal)
+    col_means = np.where(np.isnan(col_means), 0.0, col_means)
+    col_stds = np.where(np.isnan(col_stds) | (col_stds < 1e-8), 1.0, col_stds)
+
+    def _apply(arr: np.ndarray) -> np.ndarray:
+        out = arr.copy()
+        nan_mask = np.isnan(out)
+        # Mean impute per column
+        out = np.where(nan_mask, col_means[np.newaxis, :], out)
+        # Z-score
+        out = (out - col_means) / col_stds
+        # Clip to [-5, 5] to prevent gradient explosion
+        out = np.clip(out, -5.0, 5.0)
+        return out.astype(np.float32)
+
+    return _apply(train_arr), _apply(val_arr), col_means, col_stds
+
+
+def load_sequences(split: str, activity_ids: list[str]) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Load pre-launch and in-transit sequences from Parquet.
+
+    Returns:
+        pre_arr:     (N, 150, C) float32
+        transit_arr: (N, 72, C) float32
+        transit_mask:(N, 72) bool
+    """
+    path = SEQ_DIR / f"{split}_sequences.parquet"
+    if not path.exists():
+        raise FileNotFoundError(
+            f"Sequence file not found: {path}\n"
+            "Run: python scripts/build_pinn_sequences.py"
+        )
+
+    import pandas as pd
+
+    tbl = pq.read_table(str(path), columns=["activity_id", "window", "timestep"] + SEQ_CHANNELS)
+    df = tbl.to_pandas()
+
+    # Filter to only the events we need
+    aid_to_idx = {aid: i for i, aid in enumerate(activity_ids)}
+    df = df[df["activity_id"].isin(aid_to_idx)].copy()
+
+    # Map string activity_id → integer event index
+    df["event_idx"] = df["activity_id"].map(aid_to_idx).astype(np.int32)
+    df["timestep"] = df["timestep"].astype(np.int32)
+
+    N = len(activity_ids)
+    pre_arr = np.full((N, PRE_LEN, N_SEQ_CH_BASE), float("nan"), dtype=np.float32)
+    transit_arr = np.full((N, TRANSIT_LEN, N_SEQ_CH_BASE), float("nan"), dtype=np.float32)
+    transit_mask = np.zeros((N, TRANSIT_LEN), dtype=bool)
+
+    ch_vals = df[SEQ_CHANNELS].to_numpy(dtype=np.float32, na_value=float("nan"))  # (M, C)
+    ev_idx = df["event_idx"].to_numpy()
+    ts_vals = df["timestep"].to_numpy()
+    win_vals = df["window"].to_numpy()
+
+    # Pre-launch window: timestep = h - PRE_LEN → h = timestep + PRE_LEN
+    pre_mask = win_vals == "pre_launch"
+    if pre_mask.any():
+        h_pre = ts_vals[pre_mask] + PRE_LEN
+        ei_pre = ev_idx[pre_mask]
+        valid = (h_pre >= 0) & (h_pre < PRE_LEN)
+        pre_arr[ei_pre[valid], h_pre[valid], :] = ch_vals[pre_mask][valid]
+
+    # In-transit window: timestep = h directly
+    tr_mask = win_vals == "in_transit"
+    if tr_mask.any():
+        h_tr = ts_vals[tr_mask]
+        ei_tr = ev_idx[tr_mask]
+        valid = (h_tr >= 0) & (h_tr < TRANSIT_LEN)
+        transit_arr[ei_tr[valid], h_tr[valid], :] = ch_vals[tr_mask][valid]
+        transit_mask[ei_tr[valid], h_tr[valid]] = True
+
+    return pre_arr, transit_arr, transit_mask
+
+
+def compute_sequence_derivatives(seq: np.ndarray) -> np.ndarray:
+    """Append 1st, 2nd, and 3rd finite-difference derivatives to sequence channels.
+
+    Input:  (N, T, C)  float32 — original OMNI channels
+    Output: (N, T, C + 3*D) float32 — original + derivatives for D key channels
+
+    Derivative channels computed for: Bz_GSM(0), flow_speed(1), proton_density(2),
+    flow_pressure(3), AE_nT(4), Dst_nT(5), B_scalar_avg(7), By_GSM(8)
+    — 8 channels × 3 orders = 24 extra channels → total C+24
+
+    NaN-safe: differences skip NaN positions (filled with NaN, imputed later).
+    """
+    DERIV_INDICES = [0, 1, 2, 3, 4, 5, 7, 8]  # indices in SEQ_CHANNELS
+    N, T, C = seq.shape
+    D = len(DERIV_INDICES)
+
+    out = np.full((N, T, C + 3 * D), float("nan"), dtype=np.float32)
+    out[:, :, :C] = seq  # copy originals
+
+    for order in range(1, 4):
+        col_offset = C + (order - 1) * D
+        for d_pos, ch_idx in enumerate(DERIV_INDICES):
+            s = seq[:, :, ch_idx]  # (N, T)
+            deriv = np.full_like(s, float("nan"))
+            if order == 1:
+                deriv[:, 1:] = s[:, 1:] - s[:, :-1]
+            elif order == 2:
+                if T > 2:
+                    deriv[:, 1:-1] = s[:, 2:] - 2 * s[:, 1:-1] + s[:, :-2]
+            elif order == 3:
+                # 3rd order: d3/dt3 ≈ d2[n] - d2[n-1] (difference of 2nd differences)
+                if T > 3:
+                    d2 = np.full_like(s, float("nan"))
+                    if T > 2:
+                        d2[:, 1:-1] = s[:, 2:] - 2 * s[:, 1:-1] + s[:, :-2]
+                    deriv[:, 2:] = d2[:, 2:] - d2[:, 1:-1]
+            out[:, :, col_offset + d_pos] = deriv
+
+    return out
+
+
+def compute_expanded_static(static_arr: np.ndarray, feature_names: list[str]) -> np.ndarray:
+    """Add engineered static features: log-transforms, interactions, physics proxies.
+
+    Input:  (N, S) raw static features
+    Output: (N, S + E) with E extra engineered columns appended
+
+    Extra features (in order):
+      log1p(usflux), log1p(totpot), log1p(area_acr), log1p(cdaw_mass_log10+10)
+      cme_speed * sin(|cme_latitude| * pi/180)  — latitudinal projection
+      delta_v_kms / (cme_speed_kms + 1)         — relative drag proxy
+      totpot * area_acr                          — SHARP free energy proxy
+      accel_kms2^2                               — squared acceleration
+      second_order_speed_final - second_order_speed_init  — CDAW speed change
+    """
+    idx = {name: i for i, name in enumerate(feature_names)}
+
+    def _col(name: str) -> np.ndarray:
+        i = idx.get(name)
+        return static_arr[:, i].copy() if i is not None else np.full(len(static_arr), float("nan"))
+
+    extras = []
+
+    # Log-transforms for power-law distributed SHARP/CDAW fields
+    for col in ("usflux", "totpot", "area_acr"):
+        v = _col(col)
+        extras.append(np.log1p(np.clip(np.abs(v), 0, None)))
+
+    # CME latitudinal projection: higher latitude → less geo-effective
+    spd = _col("cme_speed_kms")
+    lat = _col("cme_latitude")
+    proj = spd * np.sin(np.abs(lat) * np.pi / 180.0)
+    extras.append(np.where(np.isnan(spd) | np.isnan(lat), float("nan"), proj))
+
+    # Relative drag proxy
+    dv = _col("delta_v_kms")
+    spd2 = _col("cme_speed_kms") + 1.0
+    extras.append(np.where(np.isnan(dv) | np.isnan(spd), float("nan"), dv / spd2))
+
+    # SHARP free energy proxy
+    tp = _col("totpot")
+    ac = _col("area_acr")
+    extras.append(np.where(np.isnan(tp) | np.isnan(ac), float("nan"), tp * ac))
+
+    # Squared acceleration (sign-preserving)
+    acc = _col("accel_kms2")
+    extras.append(np.where(np.isnan(acc), float("nan"), acc * np.abs(acc)))
+
+    # CDAW speed change
+    sf = _col("second_order_speed_final")
+    si = _col("second_order_speed_init")
+    extras.append(np.where(np.isnan(sf) | np.isnan(si), float("nan"), sf - si))
+
+    extra_arr = np.column_stack(extras).astype(np.float32)  # (N, E)
+    return np.concatenate([static_arr, extra_arr], axis=1)
+
+
+EXTRA_STATIC_NAMES = [
+    "log1p_usflux", "log1p_totpot", "log1p_area_acr",
+    "cme_speed_lat_proj", "relative_drag_proxy",
+    "sharp_free_energy_proxy", "accel_signed_sq",
+    "cdaw_speed_change",
+]
+
+DERIV_CHANNEL_NAMES = [
+    f"{order}d_{ch}" for order in ("d1", "d2", "d3")
+    for ch in ["Bz_GSM", "flow_speed", "proton_density", "flow_pressure",
+               "AE_nT", "Dst_nT", "B_scalar_avg", "By_GSM"]
+]
+
+
+def _to_tensor(arr: np.ndarray) -> torch.Tensor:
+    return torch.from_numpy(arr)
+
+
+def build_dataset(split: str, existing_preds: dict) -> dict:
+    """Load all tensors for a split. Returns dict ready for TFTTrainer."""
+    print(f"  Loading scalar features [{split}]...")
+    activity_ids, static_arr, existing_arr, labels = load_scalar_features(split, existing_preds)
+
+    # Expand static features with engineered interactions/log-transforms
+    static_arr = compute_expanded_static(static_arr, STATIC_FEATURES)
+    print(f"    {len(activity_ids)} events, {static_arr.shape[1]} static ({N_STATIC_BASE} base "
+          f"+ {N_EXTRA_STATIC} engineered) + {N_EXISTING} pred features")
+
+    print(f"  Loading sequences [{split}]...")
+    pre_arr, transit_arr, transit_mask = load_sequences(split, activity_ids)
+
+    # Append 1st/2nd/3rd derivatives for key OMNI channels
+    pre_arr = compute_sequence_derivatives(pre_arr)
+    transit_arr = compute_sequence_derivatives(transit_arr)
+    print(f"    pre_seq: {pre_arr.shape}, transit_seq: {transit_arr.shape} "
+          f"({N_SEQ_CH_BASE} base + {N_DERIV_CH} derivative channels)")
+
+    # Per-feature mean imputation (fit on train, apply consistently)
+    # NaN → 0 after z-score norm (z-score computed outside, here just pass as-is;
+    # the TFT's _replace_nan(0.0) handles NaN at forward time)
+
+    return {
+        "activity_ids": activity_ids,
+        "static": _to_tensor(static_arr),
+        "pre_seq": _to_tensor(pre_arr),
+        "transit_seq": _to_tensor(transit_arr),
+        "transit_mask": torch.from_numpy(transit_mask),
+        "existing_preds": _to_tensor(existing_arr),
+        "target": _to_tensor(labels).unsqueeze(1),
+    }
+
+
+# ── Temporal CV fold splitting ────────────────────────────────────────────────
+
+def get_fold_indices(
+    activity_ids: list[str],
+    n_folds: int,
+    gap_days: int,
+    conn: sqlite3.Connection,
+) -> list[tuple[list[int], list[int]]]:
+    """Expanding-window temporal CV. Last fold is calibration-only (RULE-164)."""
+    rows = conn.execute(
+        "SELECT activity_id, launch_time FROM pinn_expanded_flat "
+        "WHERE split='train' AND exclude=0 ORDER BY launch_time"
+    ).fetchall()
+    launch_map = {r[0]: r[1] for r in rows}
+
+    from datetime import timedelta
+    times = []
+    for aid in activity_ids:
+        lt = launch_map.get(aid, "")
+        try:
+            t = datetime.strptime(lt[:16], "%Y-%m-%d %H:%M")
+        except Exception:
+            t = datetime(2010, 1, 1)
+        times.append(t)
+
+    N = len(activity_ids)
+    sorted_idx = sorted(range(N), key=lambda i: times[i])
+    t_sorted = [times[i] for i in sorted_idx]
+
+    t_min, t_max = t_sorted[0], t_sorted[-1]
+    span = (t_max - t_min).days
+    fold_size = span // n_folds
+    gap = timedelta(days=gap_days)
+
+    folds = []
+    for f in range(n_folds):
+        val_start = t_min + (f + 1) * timedelta(days=fold_size) - timedelta(days=fold_size // 2)
+        val_end = t_min + (f + 2) * timedelta(days=fold_size)
+        if f == n_folds - 1:
+            val_end = t_max + timedelta(days=1)
+
+        train_idx = [i for i in range(N) if times[i] < val_start - gap]
+        val_idx = [i for i in range(N) if val_start <= times[i] < val_end]
+
+        if train_idx and val_idx:
+            folds.append((train_idx, val_idx))
+
+    return folds
+
+
+# ── Metrics ──────────────────────────────────────────────────────────────────
+
+def compute_metrics(preds_p50: np.ndarray, labels: np.ndarray) -> dict:
+    valid = ~np.isnan(labels) & ~np.isnan(preds_p50)
+    if not valid.any():
+        return {"mae": float("nan"), "rmse": float("nan"), "bias": float("nan"), "n": 0}
+    y, p = labels[valid], preds_p50[valid]
+    err = p - y
+    return {
+        "mae": float(np.mean(np.abs(err))),
+        "rmse": float(np.sqrt(np.mean(err ** 2))),
+        "bias": float(np.mean(err)),
+        "n": int(valid.sum()),
+    }
+
+
+# ── Main training loop ────────────────────────────────────────────────────────
+
+def main() -> int:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--epochs", type=int, default=150)
+    ap.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
+    ap.add_argument("--folds", type=int, default=5)
+    ap.add_argument("--validate-only", action="store_true")
+    ap.add_argument("--d-model", type=int, default=64)
+    ap.add_argument("--n-heads", type=int, default=4)
+    ap.add_argument("--batch-size", type=int, default=64)
+    ap.add_argument("--lr", type=float, default=1e-3)
+    args = ap.parse_args()
+
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    MODEL_DIR.mkdir(parents=True, exist_ok=True)
+
+    if args.validate_only:
+        results_path = OUTPUT_DIR / "tft_v1_results.json"
+        if results_path.exists():
+            r = json.loads(results_path.read_text())
+            print(f"Holdout MAE: {r['holdout_mae']:.3f}h")
+            print(f"Holdout RMSE: {r['holdout_rmse']:.3f}h")
+            print(f"Holdout N: {r['holdout_n']}")
+        else:
+            print("No results found — run without --validate-only first")
+        return 0
+
+    print("=== train_tft_model ===")
+    print(f"device: {args.device}")
+    print(f"d_model: {args.d_model}, n_heads: {args.n_heads}, epochs: {args.epochs}")
+    print(f"static features: {N_STATIC}, seq channels: {N_SEQ_CH}, existing preds: {N_EXISTING}")
+
+    print("\n[1/4] Loading existing model predictions...")
+    existing_preds = load_existing_predictions()
+    print(f"  Phase 8 preds loaded: {sum(1 for v in existing_preds.values() if 'phase8_pred_transit_hours' in v)}")
+    print(f"  PINN V1 preds loaded: {sum(1 for v in existing_preds.values() if 'pinn_v1_pred_transit_hours' in v)}")
+
+    print("\n[2/4] Building datasets...")
+    train_ds = build_dataset("train", existing_preds)
+    holdout_ds = build_dataset("holdout", existing_preds)
+
+    # Impute sentinels → NaN → mean, then z-score normalize. Fit on train only.
+    train_static_np = train_ds["static"].numpy()
+    hold_static_np = holdout_ds["static"].numpy()
+    train_norm, hold_norm, col_means, col_stds = impute_and_normalize(train_static_np, hold_static_np)
+    train_ds["static"] = torch.from_numpy(train_norm)
+    holdout_ds["static"] = torch.from_numpy(hold_norm)
+    print(f"  Static nan after norm: {torch.isnan(train_ds['static']).sum().item()}")
+
+    # Normalize sequences: fit per-channel on train, apply to both splits
+    # Shape (N, T, C) → reshape to (N*T, C) for stats
+    train_pre_np = train_ds["pre_seq"].numpy()   # (1884, 150, 20)
+    hold_pre_np = holdout_ds["pre_seq"].numpy()
+    N_tr, T_pre, C = train_pre_np.shape
+    train_pre_flat = train_pre_np.reshape(-1, C)
+    hold_pre_flat = hold_pre_np.reshape(-1, C)
+    tr_pre_norm, ho_pre_norm, seq_means, seq_stds = impute_and_normalize(train_pre_flat, hold_pre_flat)
+    train_ds["pre_seq"] = torch.from_numpy(tr_pre_norm.reshape(N_tr, T_pre, C))
+    holdout_ds["pre_seq"] = torch.from_numpy(ho_pre_norm.reshape(hold_pre_np.shape[0], T_pre, C))
+
+    train_tr_np = train_ds["transit_seq"].numpy()   # (1884, 72, 20)
+    hold_tr_np = holdout_ds["transit_seq"].numpy()
+    _, T_tr, _ = train_tr_np.shape
+    tr_tr_norm, ho_tr_norm, _, _ = impute_and_normalize(
+        train_tr_np.reshape(-1, C), hold_tr_np.reshape(-1, C))
+    train_ds["transit_seq"] = torch.from_numpy(tr_tr_norm.reshape(N_tr, T_tr, C))
+    holdout_ds["transit_seq"] = torch.from_numpy(ho_tr_norm.reshape(hold_tr_np.shape[0], T_tr, C))
+
+    # Normalize existing_preds (transit hours → z-score)
+    train_ep_np = train_ds["existing_preds"].numpy()
+    hold_ep_np = holdout_ds["existing_preds"].numpy()
+    tr_ep_norm, ho_ep_norm, _, _ = impute_and_normalize(train_ep_np, hold_ep_np)
+    train_ds["existing_preds"] = torch.from_numpy(tr_ep_norm)
+    holdout_ds["existing_preds"] = torch.from_numpy(ho_ep_norm)
+    print(f"  Sequence + existing_preds normalized. Seq nan after norm: "
+          f"{torch.isnan(train_ds['pre_seq']).sum().item()}")
+
+    model_kwargs = {
+        "n_static": N_STATIC,
+        "n_seq_channels": N_SEQ_CH,
+        "n_existing_preds": N_EXISTING,
+        "d_model": args.d_model,
+        "n_heads": args.n_heads,
+        "n_lstm_layers": 2,
+        "dropout": 0.1,
+        "max_pre_len": PRE_LEN,
+        "max_transit_len": TRANSIT_LEN,
+    }
+
+    trainer = TFTTrainer(
+        model_kwargs=model_kwargs,
+        epochs=args.epochs,
+        lr=args.lr,
+        batch_size=args.batch_size,
+        n_folds=args.folds,
+        gap_days=14,
+        device=args.device,
+    )
+
+    print("\n[3/4] Running temporal CV...")
+    conn = sqlite3.connect(str(STAGING_DB))
+    folds = get_fold_indices(train_ds["activity_ids"], args.folds, gap_days=14, conn=conn)
+    conn.close()
+    print(f"  {len(folds)} folds (last fold = calibration-only)")
+
+    fold_metrics = []
+    best_model = None
+    best_val_mae = float("inf")
+
+    for fold_i, (train_idx, val_idx) in enumerate(folds):
+        is_calibration = (fold_i == len(folds) - 1)
+        print(f"\n  Fold {fold_i + 1}/{len(folds)}"
+              f" {'[CALIBRATION]' if is_calibration else ''}"
+              f" train={len(train_idx)} val={len(val_idx)}")
+
+        fold_train = {k: v[train_idx] if torch.is_tensor(v) else v
+                      for k, v in train_ds.items() if k != "activity_ids"}
+        fold_val = {k: v[val_idx] if torch.is_tensor(v) else v
+                    for k, v in train_ds.items() if k != "activity_ids"}
+        fold_val_ids = [train_ds["activity_ids"][i] for i in val_idx]
+
+        def progress_cb(epoch, tl, vl, f=fold_i):
+            if epoch % 10 == 0:
+                print(f"    epoch {epoch:3d}: train={tl:.4f} val={vl:.4f}")
+
+        # RULE-164: last fold is calibration-only — skip training, evaluate only
+        if is_calibration:
+            if best_model is None:
+                print("  WARNING: no best model found — skipping calibration fold")
+                continue
+            model = best_model
+        else:
+            import threading
+            ct_event = threading.Event()
+            model = trainer.train_fold(fold_train, fold_val, progress_cb, ct_event)
+
+        val_preds = trainer.predict(model, fold_val).numpy()
+        metrics = compute_metrics(val_preds[:, 1], fold_val["target"].squeeze().numpy())
+        fold_metrics.append({**metrics, "fold": fold_i + 1, "calibration": is_calibration,
+                              "n_train": len(train_idx), "n_val": len(val_idx)})
+        print(f"    val MAE={metrics['mae']:.3f}h RMSE={metrics['rmse']:.3f}h")
+
+        if not is_calibration and metrics["mae"] < best_val_mae:
+            best_val_mae = metrics["mae"]
+            best_model = model
+            torch.save(model.state_dict(), str(MODEL_DIR / f"tft_v1_fold{fold_i+1}.pt"))
+            print(f"    new best model saved (fold {fold_i+1})")
+
+    print("\n[4/4] Final training on all train data + holdout evaluation...")
+    if best_model is None:
+        print("ERROR: no model trained")
+        return 1
+
+    # Train a final model on all 1,884 training events using best fold as warm start.
+    # Use 10% of train as a mini validation set to monitor convergence (chronological tail).
+    N_all = train_ds["target"].shape[0]
+    split_idx = int(0.9 * N_all)
+    all_train = {k: v[:split_idx] if torch.is_tensor(v) else v
+                 for k, v in train_ds.items() if k != "activity_ids"}
+    all_val = {k: v[split_idx:] if torch.is_tensor(v) else v
+               for k, v in train_ds.items() if k != "activity_ids"}
+
+    print(f"  Full-data fit: {split_idx} train, {N_all - split_idx} val, {args.epochs} epochs")
+
+    def final_progress_cb(epoch, tl, vl):
+        if epoch % 10 == 0:
+            print(f"    epoch {epoch:3d}: train={tl:.4f} val={vl:.4f}")
+
+    import threading
+    final_model = trainer.train_fold(all_train, all_val, final_progress_cb, threading.Event())
+    torch.save(final_model.state_dict(), str(MODEL_DIR / "tft_v1_final.pt"))
+    print("  Final model saved.")
+
+    holdout_preds = trainer.predict(final_model, holdout_ds).numpy()  # (90, 3)
+    holdout_labels = holdout_ds["target"].squeeze().numpy()
+    holdout_ids = holdout_ds["activity_ids"]
+
+    metrics = compute_metrics(holdout_preds[:, 1], holdout_labels)
+    print(f"\n  Holdout MAE:  {metrics['mae']:.3f}h")
+    print(f"  Holdout RMSE: {metrics['rmse']:.3f}h")
+    print(f"  Holdout bias: {metrics['bias']:.3f}h")
+    print(f"  Holdout N:    {metrics['n']}")
+
+    # Build per-event output
+    events_out = []
+    for i, aid in enumerate(holdout_ids):
+        if math.isnan(holdout_labels[i]):
+            continue
+        events_out.append({
+            "activity_id": aid,
+            "truth_transit_hours": float(holdout_labels[i]),
+            "pred_p10": float(holdout_preds[i, 0]),
+            "pred_p50": float(holdout_preds[i, 1]),
+            "pred_p90": float(holdout_preds[i, 2]),
+            "error_hours": float(holdout_preds[i, 1] - holdout_labels[i]),
+        })
+
+    results = {
+        "model": "tft_v1",
+        "generated_at": datetime.utcnow().isoformat() + "Z",
+        "architecture": model_kwargs,
+        "training": {"epochs": args.epochs, "lr": args.lr, "device": args.device},
+        "n_static_features": N_STATIC,
+        "n_seq_channels": N_SEQ_CH,
+        "n_existing_preds": N_EXISTING,
+        "cv_fold_metrics": fold_metrics,
+        "cv_mae_mean": float(np.mean([f["mae"] for f in fold_metrics if not f["calibration"]])),
+        "holdout_mae": metrics["mae"],
+        "holdout_rmse": metrics["rmse"],
+        "holdout_bias": metrics["bias"],
+        "holdout_n": metrics["n"],
+        "static_feature_names": STATIC_FEATURES,
+        "seq_channel_names": SEQ_CHANNELS,
+        "existing_pred_names": EXISTING_PRED_COLS,
+        "holdout_predictions": events_out,
+    }
+
+    results_path = OUTPUT_DIR / "tft_v1_results.json"
+    results_path.write_text(json.dumps(results, indent=2))
+    print(f"\n  Results saved: {results_path}")
+
+    # Save meta for sidecar inference
+    meta_path = MODEL_DIR / "tft_v1_meta.json"
+    meta_path.write_text(json.dumps({
+        "model_type": "TFT_v1",
+        "model_kwargs": model_kwargs,
+        "static_features": STATIC_FEATURES,
+        "seq_channels": SEQ_CHANNELS,
+        "existing_pred_cols": EXISTING_PRED_COLS,
+    }, indent=2))
+    print(f"  Meta saved: {meta_path}")
+
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
