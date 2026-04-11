@@ -117,11 +117,13 @@ def load_existing_predictions() -> dict[str, dict[str, float]]:
 
     if PINN_V1_RESULTS.exists():
         data = json.loads(PINN_V1_RESULTS.read_text())
-        for ev in data.get("holdout_predictions", []):
-            aid = ev.get("activity_id") or ev.get("cme_id")
-            val = ev.get("predicted") or ev.get("pred_transit_hours")
-            if aid and val is not None:
-                preds.setdefault(aid, {})["pinn_v1_pred_transit_hours"] = float(val)
+        # Load OOF (training) + holdout predictions; both use "predicted" key
+        for section in ("oof_predictions", "holdout_predictions"):
+            for ev in data.get(section, []):
+                aid = ev.get("activity_id") or ev.get("cme_id")
+                val = ev.get("predicted") or ev.get("pred_transit_hours")
+                if aid and val is not None:
+                    preds.setdefault(aid, {})["pinn_v1_pred_transit_hours"] = float(val)
 
     return preds
 

@@ -135,8 +135,11 @@ def extract_window(
         transit_arr: float32 array (hours_after, len(OMNI_CHANNELS))
         density_fill_rate: fraction of pre-launch proton_density rows that are non-NaN
     """
-    t_pre_start = launch - timedelta(hours=hours_before)
-    t_transit_end = launch + timedelta(hours=hours_after)
+    # Floor launch to the nearest hour so lookup keys align to omni_hourly HH:00 rows.
+    # e.g. launch=09:54 → launch_h=09:00; pre_start keys are then 03:00, 04:00, ...
+    launch_h = launch.replace(minute=0, second=0, microsecond=0)
+    t_pre_start = launch_h - timedelta(hours=hours_before)
+    t_transit_end = launch_h + timedelta(hours=hours_after)
 
     col_sql = ", ".join(f'"{c}"' for c in OMNI_CHANNELS)
     rows = conn_solar.execute(
@@ -166,7 +169,7 @@ def extract_window(
         return arr
 
     pre_arr = _build_array(t_pre_start, hours_before)
-    transit_arr = _build_array(launch, hours_after)
+    transit_arr = _build_array(launch_h, hours_after)
 
     # Density fill rate on pre-launch window
     density_col_idx = OMNI_CHANNELS.index("proton_density")
