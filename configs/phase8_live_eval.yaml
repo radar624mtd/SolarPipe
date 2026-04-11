@@ -1,0 +1,191 @@
+domain_pipeline:
+  name: phase8_live_eval
+
+  cv:
+    folds: 5
+    gap_buffer_days: 5
+    min_test_events: 30
+    # Held-out split: train on all data strictly before 2026-01-01 (1706 quality events),
+    # test on 2026 events (71 quality events including the 4 CCMC benchmark cases).
+    held_out_after: "2026-01-01T00:00:00+00:00"
+
+  data_source:
+    provider: sqlite
+    connection_string: "Data Source=data/data/staging/staging.db"
+    table: feature_vectors
+    filter: >
+      quality_flag >= 3
+      AND transit_time_hours IS NOT NULL
+      AND transit_time_hours > 0
+      AND transit_time_hours < 300
+      AND dst_min_nt IS NOT NULL
+      AND dst_min_nt < 0
+
+  origination:
+    target: arrival_speed_kms
+    stage: origination_rf
+
+  transit:
+    target: transit_time_hours
+    physics_stage: drag_baseline
+    residual_stage: transit_rf_residual
+
+  impact:
+    target: dst_min_nt
+    physics_stage: burton_ode
+    residual_stage: impact_rf_residual
+
+  meta_learner:
+    stages:
+      arrival_time_hours:   meta_arrival_rf
+      storm_intensity_nt:   meta_intensity_rf
+      storm_duration_hours: meta_duration_rf
+
+  physics_baseline:
+    compose: "drag_baseline + burton_ode"
+    stages: [drag_baseline, burton_ode]
+
+stages:
+
+  origination_rf:
+    framework: MlNet
+    model_type: FastForest
+    features:
+      - cme_speed_kms
+      - cme_half_angle_deg
+      - cme_latitude
+      - cme_longitude
+      - flare_class_numeric
+      - usflux
+      - meangam
+      - meangbt
+      - meangbz
+      - meangbh
+      - meanjzd
+      - totusjz
+      - meanalp
+      - meanjzh
+      - totusjh
+      - absnjzh
+      - savncpp
+      - totpot
+      - meanshr
+      - shrgt45
+      - r_value
+      - area_acr
+      - has_sharp_obs
+      - has_flare_obs
+      - has_mass_obs
+      - magnetic_complexity_ratio
+      - helicity_proxy
+      - flare_speed_coupling
+      - source_geometry_factor
+    target: arrival_speed_kms
+    hyperparameters:
+      number_of_trees: 150
+      number_of_leaves: 31
+      feature_fraction: 0.7
+
+  drag_baseline:
+    framework: Physics
+    model_type: DragBased
+    features: [cme_speed_kms, sw_speed_ambient]
+    target: transit_time_hours
+    hyperparameters:
+      drag_parameter: 0.2e-7
+      background_speed_km_s: 400
+      r_start_rs: 21.5
+      r_stop_rs: 215.0
+      solver: dormand_prince
+
+  transit_rf_residual:
+    framework: MlNet
+    model_type: FastForest
+    features:
+      - pred_arrival_speed_kms
+      - sw_speed_ambient
+      - sw_density_ambient
+      - sw_bt_ambient
+      - sw_bz_ambient
+      - has_bz_obs
+      - dynamic_pressure_sw
+      - newell_coupling_approx
+      - delta_v_kms
+    target: transit_time_hours
+    hyperparameters:
+      number_of_trees: 150
+      number_of_leaves: 31
+      feature_fraction: 0.7
+
+  burton_ode:
+    framework: Physics
+    model_type: BurtonOde
+    features: [sw_bz_ambient, sw_speed_ambient, sw_density_ambient]
+    target: dst_min_nt
+    hyperparameters: {}
+
+  impact_rf_residual:
+    framework: MlNet
+    model_type: FastForest
+    features:
+      - pred_arrival_speed_kms
+      - pred_transit_time_hours
+      - sw_bz_ambient
+      - sw_density_ambient
+      - sw_speed_ambient
+      - has_bz_obs
+      - vbs_coupling
+      - ring_current_proxy
+    target: dst_min_nt
+    hyperparameters:
+      number_of_trees: 150
+      number_of_leaves: 31
+      feature_fraction: 0.7
+
+  meta_arrival_rf:
+    framework: MlNet
+    model_type: FastForest
+    features:
+      - pred_origination_arrival_speed_kms
+      - pred_transit_time_hours
+      - pred_dst_min_nt
+      - cme_speed_kms
+      - sw_speed_ambient
+      - sw_bz_ambient
+      - sw_density_ambient
+    target: transit_time_hours
+    hyperparameters:
+      number_of_trees: 100
+      number_of_leaves: 20
+      feature_fraction: 0.7
+
+  meta_intensity_rf:
+    framework: MlNet
+    model_type: FastForest
+    features:
+      - pred_origination_arrival_speed_kms
+      - pred_transit_time_hours
+      - pred_dst_min_nt
+      - sw_bz_ambient
+      - sw_density_ambient
+      - vbs_coupling
+    target: dst_min_nt
+    hyperparameters:
+      number_of_trees: 100
+      number_of_leaves: 20
+      feature_fraction: 0.7
+
+  meta_duration_rf:
+    framework: MlNet
+    model_type: FastForest
+    features:
+      - pred_dst_min_nt
+      - pred_transit_time_hours
+      - sw_density_ambient
+      - sw_bz_ambient
+      - vbs_coupling
+    target: storm_duration_hours
+    hyperparameters:
+      number_of_trees: 100
+      number_of_leaves: 20
+      feature_fraction: 0.7

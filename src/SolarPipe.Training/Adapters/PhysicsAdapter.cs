@@ -23,7 +23,7 @@ public sealed class PhysicsAdapter : IFrameworkAdapter
             ["DragBased"] = dragModel,
         };
         _equations = registry;
-        SupportedModels = ["DragBased", "BurtonOde", "NewellCoupling"];
+        SupportedModels = ["DragBased", "DragBasedV2", "BurtonOde", "NewellCoupling"];
     }
 
     public Task<ITrainedModel> TrainAsync(
@@ -37,6 +37,8 @@ public sealed class PhysicsAdapter : IFrameworkAdapter
         {
             var t when t.Equals("DragBased", StringComparison.OrdinalIgnoreCase)
                 => new DragBasedModel(config),
+            var t when t.Equals("DragBasedV2", StringComparison.OrdinalIgnoreCase)
+                => new DragBasedModelWithArrivalSpeed(config),
             var t when t.Equals("BurtonOde", StringComparison.OrdinalIgnoreCase)
                 => new BurtonOde(config),
             var t when t.Equals("NewellCoupling", StringComparison.OrdinalIgnoreCase)

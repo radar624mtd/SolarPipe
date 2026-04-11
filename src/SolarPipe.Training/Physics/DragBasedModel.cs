@@ -211,6 +211,61 @@ public sealed class DragBasedModel : ITrainedModel
         return (t, tArrival);
     }
 
+    // Like RunOde but returns (ArrivalTimeHours, ArrivalSpeedKms) instead of (tFinal, tArrival).
+    // Used by DragBasedModelWithArrivalSpeed to generate Domain 1 pseudo-labels.
+    internal static (double ArrivalHours, double ArrivalSpeedKms) RunOdeWithArrivalSpeed(
+        double v0KmPerSec,
+        double wKmPerSec,
+        double gammaKmInv,
+        double startSolarRadii,
+        double targetSolarRadii)
+    {
+        var (_, arrivalHours) = RunOde(v0KmPerSec, wKmPerSec, gammaKmInv, startSolarRadii, targetSolarRadii);
+
+        // Re-run to capture vArrival — same ODE, same crossing logic.
+        const double kmPerHourPerSolarRadius = 3600.0 / PhysicalConstants.SolarRadiusKm;
+        double[] yCurr = [startSolarRadii, v0KmPerSec];
+        double t = 0.0;
+        double h0 = 0.1;
+        double vArrival = v0KmPerSec;
+
+        while (t < 200.0)
+        {
+            double tSegEnd = Math.Min(t + 1.0, 200.0);
+            var (tNew, yNew) = DormandPrinceSolver.IntegrateVector(
+                (tau, yv) =>
+                {
+                    double v = yv[1];
+                    double dDist  = v * kmPerHourPerSolarRadius;
+                    double dSpeed = -gammaKmInv * (v - wKmPerSec) * Math.Abs(v - wKmPerSec) * 3600.0;
+                    if (double.IsNaN(dDist) || double.IsNaN(dSpeed))
+                        throw new InvalidOperationException(
+                            $"NaN in drag ODE (arrival speed) at t={tau:F3}h (stage=DragBasedModel).");
+                    return [dDist, dSpeed];
+                },
+                t, tSegEnd, yCurr, h0);
+
+            if (yCurr[0] < targetSolarRadii && yNew[0] >= targetSolarRadii)
+            {
+                double frac = (targetSolarRadii - yCurr[0]) / (yNew[0] - yCurr[0]);
+                vArrival = yCurr[1] + frac * (yNew[1] - yCurr[1]);
+                break;
+            }
+
+            t = tNew;
+            yCurr = yNew;
+            h0 = 0.1;
+
+            if (t >= 200.0)
+            {
+                vArrival = yCurr.Length > 1 ? yCurr[1] : double.NaN;
+                break;
+            }
+        }
+
+        return (arrivalHours, vArrival);
+    }
+
     private void ExtractHyperparameters(IReadOnlyDictionary<string, object>? hp)
     {
         _gammaKmInv = FindHyperValue(hp, 0.5e-7, "gamma_km_inv", "drag_parameter");

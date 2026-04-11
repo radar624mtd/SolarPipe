@@ -64,12 +64,12 @@ internal sealed class DataFrameDataView : IDataView
         {
             // DateTime columns store Unix seconds as float[] — map to Single so ML.NET
             // can read them without triggering ReadOnlyMemory<char> getter errors.
+            // All columns are stored as float[] internally (String → NaN at load time).
+            // Always expose as Single to avoid ML.NET ReadOnlyMemory<char> getter errors.
             var dvType = col.Type switch
             {
-                ColumnType.Float    => NumberDataViewType.Single,
-                ColumnType.Int      => NumberDataViewType.Int32,
-                ColumnType.DateTime => NumberDataViewType.Single,
-                _                   => (DataViewType)TextDataViewType.Instance
+                ColumnType.Int => NumberDataViewType.Int32,
+                _              => (DataViewType)NumberDataViewType.Single,
             };
             builder.AddColumn(col.Name, dvType);
         }

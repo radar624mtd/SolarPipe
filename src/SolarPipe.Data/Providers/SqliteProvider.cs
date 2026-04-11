@@ -60,10 +60,17 @@ public sealed class SqliteProvider : IDataSourceProvider
 
         // Build result schema from actual reader columns (may be a subset of the table)
         var resultCols = Enumerable.Range(0, reader.FieldCount)
-            .Select(i => new ColumnInfo(
-                reader.GetName(i),
-                InferColumnType(reader.GetDataTypeName(i).ToUpperInvariant()),
-                IsNullable: true))
+            .Select(i =>
+            {
+                var name    = reader.GetName(i);
+                var rawType = reader.GetDataTypeName(i).ToUpperInvariant();
+                var colType = InferColumnType(rawType);
+                // Promote String columns whose name hints at a timestamp to DateTime
+                // so BuildFolds in ModelSweep can detect the temporal ordering column.
+                if (colType == ColumnType.String && IsTimeColumnName(name))
+                    colType = ColumnType.DateTime;
+                return new ColumnInfo(name, colType, IsNullable: true);
+            })
             .ToList();
         var resultSchema = new DataSchema(resultCols);
 
@@ -134,8 +141,12 @@ public sealed class SqliteProvider : IDataSourceProvider
     {
         var f = value switch
         {
-            long l => (float)l,
+            long l   => (float)l,
             double d => (float)d,
+            string s when col.Type == ColumnType.DateTime
+                       && DateTime.TryParse(s, System.Globalization.CultureInfo.InvariantCulture,
+                              System.Globalization.DateTimeStyles.RoundtripKind, out var dt)
+                => (float)new DateTimeOffset(dt.ToUniversalTime()).ToUnixTimeSeconds(),
             string s when float.TryParse(s, out var parsed) => parsed,
             string => float.NaN,
             _ => float.NaN
@@ -147,6 +158,13 @@ public sealed class SqliteProvider : IDataSourceProvider
 
     private static bool IsSentinel(float v) =>
         v is 9999.9f or 999.9f or 999f or -1e31f;
+
+    // Column names that represent temporal ordering — treat as DateTime.
+    private static readonly string[] _timeNameHints =
+        ["time", "date", "datetime", "timestamp", "launch", "arrival"];
+
+    private static bool IsTimeColumnName(string name) =>
+        _timeNameHints.Any(h => name.Contains(h, StringComparison.OrdinalIgnoreCase));
 
     // Safe identifier quoting — prevents SQL injection via table names (RULE-091)
     internal static string QuoteIdentifier(string identifier)

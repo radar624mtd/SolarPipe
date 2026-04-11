@@ -1,5 +1,6 @@
 using Microsoft.ML;
 using Microsoft.ML.Trainers.FastTree;
+using Microsoft.ML.Transforms;
 using SolarPipe.Core.Interfaces;
 using SolarPipe.Core.Models;
 
@@ -20,10 +21,34 @@ public sealed class MlNetAdapter : IFrameworkAdapter
         // RULE-011: Fresh MLContext per training call with pinned seed
         var mlContext = new MLContext(seed: 42);
 
-        var trainView = trainingData.ToDataView(mlContext);
+        // Narrow to features + target only so that non-float columns (String, DateTime)
+        // don't appear in the DataView and confuse ML.NET schema resolution.
+        var usedColumns = config.Features
+            .Append(config.Target)
+            .Where(c => trainingData.Schema.HasColumn(c))
+            .Distinct()
+            .ToArray();
+        var narrowed = usedColumns.Length > 0
+            ? trainingData.SelectColumns(usedColumns)
+            : trainingData;
 
-        var featurePipeline = mlContext.Transforms.Concatenate(
-            "Features", config.Features.ToArray());
+        var trainView = narrowed.ToDataView(mlContext);
+
+        // Only reference features actually present in the narrowed training frame.
+        // Upstream configs may list computed columns that weren't materialized in every pipeline.
+        var presentFeatures = config.Features
+            .Where(f => trainingData.Schema.HasColumn(f))
+            .ToArray();
+
+        // FastForest cannot train on NaN features — impute missing values to 0 (default mode).
+        // Missingness indicator columns (has_sharp_obs, has_flare_obs, has_mass_obs) carry
+        // the "was this imputed" signal so the model can still learn missingness-dependent behavior.
+        IEstimator<ITransformer> featurePipeline = mlContext.Transforms.ReplaceMissingValues(
+            presentFeatures.Select(f => new InputOutputColumnPair(f)).ToArray(),
+            replacementMode: Microsoft.ML.Transforms.MissingValueReplacingEstimator.ReplacementMode.DefaultValue);
+
+        featurePipeline = featurePipeline.Append(
+            mlContext.Transforms.Concatenate("Features", presentFeatures));
 
         var trainer = SelectTrainer(mlContext, config);
 

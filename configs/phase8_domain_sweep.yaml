@@ -1,0 +1,222 @@
+domain_pipeline:
+  name: phase8_domain_pipeline
+
+  cv:
+    folds: 5
+    gap_buffer_days: 5
+    min_test_events: 30
+
+  data_source:
+    provider: sqlite
+    connection_string: "Data Source=data/data/staging/staging.db"
+    table: feature_vectors
+    filter: >
+      quality_flag >= 3
+      AND transit_time_hours IS NOT NULL
+      AND transit_time_hours > 0
+      AND transit_time_hours < 300
+      AND dst_min_nt IS NOT NULL
+      AND dst_min_nt < 0
+
+  # Domain 1: Origination
+  # Target is latent (arrival speed at L1, km/s) — generated as DragBasedV2 ODE pseudo-labels.
+  # Origination RF corrects ODE using source magnetic/geometric properties.
+  origination:
+    target: arrival_speed_kms
+    stage: origination_rf
+
+  # Domain 2: Transit
+  # DragBased physics baseline + RF residual correction.
+  # RF receives Domain 1 output (pred_arrival_speed_kms) as an input feature.
+  transit:
+    target: transit_time_hours
+    physics_stage: drag_baseline
+    residual_stage: transit_rf_residual
+
+  # Domain 3: Impact
+  # BurtonOde physics baseline + RF residual correction.
+  # RF receives Domain 1+2 outputs as input features.
+  impact:
+    target: dst_min_nt
+    physics_stage: burton_ode
+    residual_stage: impact_rf_residual
+
+  # Meta-learner: three independent RF models predicting arrival time, storm intensity, duration.
+  # All receive domain outputs + key raw features as inputs.
+  # storm_duration_hours is a synthetic target: tau = max(6.15, 0.060*|Dst_min|+16.65) hr
+  # (O'Brien & McPherron 2000, Burton ODE recovery formula; icme_end_time is NULL in DB).
+  meta_learner:
+    stages:
+      arrival_time_hours:   meta_arrival_rf
+      storm_intensity_nt:   meta_intensity_rf
+      storm_duration_hours: meta_duration_rf
+
+  # Physics-only baseline for comparison vs H3 from Phase 7.
+  physics_baseline:
+    compose: "drag_baseline + burton_ode"
+    stages: [drag_baseline, burton_ode]
+
+# ── Stage Definitions ─────────────────────────────────────────────────────────
+
+stages:
+
+  # ── Domain 1: Origination ─────────────────────────────────────────────────
+  origination_rf:
+    framework: MlNet
+    model_type: FastForest
+    features:
+      # CME kinematic source properties
+      - cme_speed_kms
+      - cme_half_angle_deg
+      - cme_latitude
+      - cme_longitude
+      # Flare association (68% missing → guarded by has_flare_obs)
+      - flare_class_numeric
+      # SHARP magnetic keywords (27% missing → guarded by has_sharp_obs)
+      - usflux
+      - meangam
+      - meangbt
+      - meangbz
+      - meangbh
+      - meanjzd
+      - totusjz
+      - meanalp
+      - meanjzh
+      - totusjh
+      - absnjzh
+      - savncpp
+      - totpot
+      - meanshr
+      - shrgt45
+      - r_value
+      - area_acr
+      # Missingness indicators (computed by MissingnessFeatureEnricher)
+      - has_sharp_obs
+      - has_flare_obs
+      - has_mass_obs
+      # Higher-order origination features (computed by DomainFeatureTransforms)
+      - magnetic_complexity_ratio
+      - helicity_proxy
+      - flare_speed_coupling
+      - source_geometry_factor
+    target: arrival_speed_kms
+    hyperparameters:
+      number_of_trees: 150
+      number_of_leaves: 31
+      feature_fraction: 0.7
+
+  # ── Domain 2: Transit ─────────────────────────────────────────────────────
+  drag_baseline:
+    framework: Physics
+    model_type: DragBased
+    features: [cme_speed_kms, sw_speed_ambient]
+    target: transit_time_hours
+    hyperparameters:
+      drag_parameter: 0.2e-7
+      background_speed_km_s: 400
+      r_start_rs: 21.5
+      r_stop_rs: 215.0
+      solver: dormand_prince
+
+  transit_rf_residual:
+    framework: MlNet
+    model_type: FastForest
+    features:
+      # Domain 1 output (injected by DomainFoldExecutor)
+      - pred_arrival_speed_kms
+      # Solar wind ambient conditions
+      - sw_speed_ambient
+      - sw_density_ambient
+      - sw_bt_ambient
+      - sw_bz_ambient
+      # Missingness
+      - has_bz_obs
+      # Higher-order transit features (computed by DomainFeatureTransforms)
+      - dynamic_pressure_sw
+      - newell_coupling_approx
+      - delta_v_kms
+    target: transit_time_hours
+    hyperparameters:
+      number_of_trees: 150
+      number_of_leaves: 31
+      feature_fraction: 0.7
+
+  # ── Domain 3: Impact ──────────────────────────────────────────────────────
+  burton_ode:
+    framework: Physics
+    model_type: BurtonOde
+    # sw_bz_ambient added to BurtonOde.FindColumn bz candidates (see BurtonOde.cs line 64)
+    features: [sw_bz_ambient, sw_speed_ambient, sw_density_ambient]
+    target: dst_min_nt
+    hyperparameters: {}
+
+  impact_rf_residual:
+    framework: MlNet
+    model_type: FastForest
+    features:
+      # Domain 1+2 outputs (injected by DomainFoldExecutor)
+      - pred_arrival_speed_kms
+      - pred_transit_time_hours
+      # Raw impact-domain features
+      - sw_bz_ambient
+      - sw_density_ambient
+      - sw_speed_ambient
+      # Missingness
+      - has_bz_obs
+      # Higher-order impact features (computed by DomainFeatureTransforms)
+      - vbs_coupling
+      - ring_current_proxy
+    target: dst_min_nt
+    hyperparameters:
+      number_of_trees: 150
+      number_of_leaves: 31
+      feature_fraction: 0.7
+
+  # ── Meta-Learner ──────────────────────────────────────────────────────────
+  meta_arrival_rf:
+    framework: MlNet
+    model_type: FastForest
+    features:
+      - pred_origination_arrival_speed_kms
+      - pred_transit_time_hours
+      - pred_dst_min_nt
+      - cme_speed_kms
+      - sw_speed_ambient
+      - sw_bz_ambient
+      - sw_density_ambient
+    target: transit_time_hours
+    hyperparameters:
+      number_of_trees: 100
+      number_of_leaves: 20
+      feature_fraction: 0.7
+
+  meta_intensity_rf:
+    framework: MlNet
+    model_type: FastForest
+    features:
+      - pred_origination_arrival_speed_kms
+      - pred_transit_time_hours
+      - pred_dst_min_nt
+      - sw_bz_ambient
+      - sw_density_ambient
+      - vbs_coupling
+    target: dst_min_nt
+    hyperparameters:
+      number_of_trees: 100
+      number_of_leaves: 20
+      feature_fraction: 0.7
+
+  meta_duration_rf:
+    framework: MlNet
+    model_type: FastForest
+    features:
+      - pred_dst_min_nt
+      - pred_transit_time_hours
+      - sw_density_ambient
+      - sw_bz_ambient
+      - vbs_coupling
+    target: storm_duration_hours
+    hyperparameters:
+      number_of_trees: 100
+      number_of_leaves: 20
+      feature_fraction: 0.7

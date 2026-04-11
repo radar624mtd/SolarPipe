@@ -61,8 +61,9 @@ public sealed class BurtonOde : ITrainedModel
     // Output: Dst_min (nT) per row (minimum Dst* reached during integration).
     public Task<PredictionResult> PredictAsync(IDataFrame input, CancellationToken ct)
     {
-        var bzCol = FindColumn(input, "bz_gsm", "bz_gsm_nt", "Bz_gsm");
-        var vCol = FindColumn(input, "v_km_s", "speed_km_s", "v_sw_km_s");
+        var bzCol = FindColumn(input, "bz_gsm", "bz_gsm_nt", "Bz_gsm", "bz_gsm_proxy_nt", "sw_bz_ambient");
+        var vCol  = FindColumn(input, "v_km_s", "speed_km_s", "v_sw_km_s",
+                               "sw_speed_ambient_kms", "sw_speed_ambient", "flow_speed");
 
         float[] bzArr = input.GetColumn(bzCol);
         float[] vArr = input.GetColumn(vCol);
