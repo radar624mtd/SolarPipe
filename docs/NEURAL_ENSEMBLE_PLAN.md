@@ -25,7 +25,7 @@
 
 ## 1. Current Gate
 
-**→ G5 — ONNX export** (G4 complete as of 2026-04-17, pending-commit)
+**→ G5 — ONNX export** (G4 complete as of 2026-04-17, 2748bbe)
 
 Next action: extend `solarpipe_server.py` `ExportOnnx` RPC to emit a graph with named inputs `x_flat, m_flat, x_seq, m_seq` → outputs `p10, p50, p90` from `TftPinnModel`. Verify opset ≤ 20 and run PyTorch↔ONNX parity check (max abs diff ≤ 1e-4 on 10 holdout rows). Also wire `use_tft_pinn` feature flag (default off) into `Train` and `ExportOnnx` paths (deferred from G3).
 
@@ -38,7 +38,7 @@ Next action: extend `solarpipe_server.py` `ExportOnnx` RPC to emit a graph with 
 | G1 | Schema contract | ✅ complete | fbc1138 (2026-04-17) | `python/feature_schema.py` + 25 unit tests, all passing |
 | G2 | Masked dataset loader | ✅ complete | f7c6074 (2026-04-17) | 18 unit tests passing; 1884 train + 90 holdout; split-leak guard |
 | G3 | TFT + PINN model | ✅ complete | e55a7ce (2026-04-17) | Hand-rolled TFT-style transformer (pytorch-forecasting rejected — see §G3 rationale); 15/15 tests passing |
-| G4 | Physics loss | ✅ complete | pending-commit (2026-04-17) | `python/physics_loss.py` + 30 unit tests (incl. FD-grad checks, C# unit parity); γ₀ unit bug fixed (cm⁻¹ → km⁻¹) |
+| G4 | Physics loss | ✅ complete | 2748bbe (2026-04-17) | `python/physics_loss.py` + 30 unit tests (incl. FD-grad checks, C# unit parity); γ₀ unit bug fixed (cm⁻¹ → km⁻¹) |
 | G5 | ONNX export | ◐ in progress | — | extend existing `ExportOnnx` RPC, opset ≤ 20; wire `use_tft_pinn` flag |
 | G6 | C# wiring + YAML | ☐ blocked on G5 | — | `configs/neural_ensemble_v1.yaml` + `OnnxAdapter` round-trip |
 | G7 | Holdout quality gate | ☐ blocked on G6 | — | MAE ≤ 6h (Tier 1+2 baseline) before P6 ensemble head |
@@ -104,7 +104,7 @@ Checklist (all items satisfied):
 
 **Deferred to G5:** wire into `solarpipe_server.py` behind feature flag `use_tft_pinn` (default off). Originally in G3 checklist, moved to G5 (ONNX export) because the server flag only matters once there is a trained artifact to serve — not at model-code time.
 
-### G4 — Physics loss ✅ COMPLETE (pending-commit, 2026-04-17)
+### G4 — Physics loss ✅ COMPLETE (2748bbe, 2026-04-17)
 Goal: add PINN residual losses enforcing physics plausibility.
 
 **Implementation decision (2026-04-17):** explicit **Euler** integration at n_ode_steps=100 over 120h (dt=1.2h), not RK4 or torchdiffeq. Rationale:
@@ -115,7 +115,7 @@ Goal: add PINN residual losses enforcing physics plausibility.
 **Unit correction (2026-04-17):** original file declared γ₀ in cm⁻¹ with `*1e-5` conversion, giving γ_eff ~2e-13 km⁻¹ — 5 orders of magnitude below `DragBasedModel.cs` range `[1e-9, 1e-6] km⁻¹` (canonical Vrsnak 2013). Would have trained toward ballistic (no-drag) solution. Fixed: γ₀ now declared in km⁻¹ with default 0.5e-7 (matching `DragBasedModel.ExtractHyperparameters` line 271); clamped to `[1e-9, 1e-6]` per step per `ProgressiveDragPropagator` line 104. YAML key renamed `drag_gamma_cm` → `drag_gamma_km_inv`.
 
 Checklist (all items satisfied):
-- [x] Create `python/physics_loss.py` with four losses (pending-commit):
+- [x] Create `python/physics_loss.py` with four losses (2748bbe):
   1. **Pinball** (primary task): `y - preds` max form over quantiles (0.1, 0.5, 0.9). (pending)
   2. **Drag ODE residual**: `dv/dt = -γ_eff·|v−v_sw|·(v−v_sw)`, `γ_eff = γ₀·(n_obs/n_ref)` mirroring `ProgressiveDragPropagator.cs`; explicit Euler integration; unit-correct (km⁻¹). (pending)
   3. **Monotonic decay hinge**: `max(0, v(t+1)−v(t))²` while `v(t) > v_sw(t)`, masked pairs zeroed. (pending)

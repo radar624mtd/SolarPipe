@@ -280,7 +280,7 @@ The `_SimpleTftModel` in `python/solarpipe_server.py` is a **stub LSTM** — it 
 - ✅ G2 masked dataset loader (`python/datasets/training_features_loader.py`, 18 tests) — commit f7c6074
 - ✅ `configs/neural_ensemble_v1.yaml` — 105-feature list, training + eval config, G7 quality gate
 - ✅ G3 TFT+PINN model (`python/tft_pinn_model.py`, 15 tests) — commit e55a7ce; hand-rolled `nn.TransformerEncoder` (pytorch-forecasting rejected; see plan §G3)
-- ✅ G4 physics loss (`python/physics_loss.py`, 30 tests) — pending-commit; γ₀ in km⁻¹ matching `DragBasedModel.cs`, clamped to [1e-9, 1e-6]
+- ✅ G4 physics loss (`python/physics_loss.py`, 30 tests) — commit 2748bbe; γ₀ in km⁻¹ matching `DragBasedModel.cs`, clamped to [1e-9, 1e-6]
 - ⏳ G5: ONNX export + parity test + `use_tft_pinn` server flag (deferred from G3)
 - ⏳ G6: C# `OnnxAdapter` wiring round-trip
 - ⏳ G7: Holdout MAE ≤ 6h quality gate
