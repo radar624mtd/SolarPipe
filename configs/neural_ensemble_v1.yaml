@@ -215,9 +215,11 @@ stages:
       lambda_qorder: 0.5    # quantile ordering consistency
 
       # --- Physics ODE parameters (for drag residual loss) ---
-      drag_gamma_cm: 2.0e-8     # baseline drag coefficient (cm^-1)
-      v_sw_ref_kms: 400.0       # reference solar wind speed (km/s)
-      n_ref_cm3: 5.0            # reference proton density for gamma_eff scaling
+      # gamma0 is in km^-1 to match DragBasedModel.cs / ProgressiveDragPropagator.cs.
+      # DragBasedModel default is 0.5e-7; clamped internally to [1e-9, 1e-6] km^-1.
+      drag_gamma_km_inv: 0.5e-7  # baseline drag coefficient (km^-1)
+      v_sw_ref_kms: 400.0        # reference solar wind speed (km/s)
+      n_ref_cm3: 5.0             # reference proton density for gamma_eff scaling
 
       # --- Feature flag: use TFT+PINN vs old LSTM stub ---
       use_tft_pinn: true        # set false to fall back to _SimpleTftModel
