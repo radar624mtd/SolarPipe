@@ -25,9 +25,9 @@
 
 ## 1. Current Gate
 
-**→ G1 — Schema Contract** (not started as of 2026-04-17)
+**→ G2 — Masked Dataset Loader** (G1 complete as of 2026-04-17, commit fbc1138)
 
-Next action: create `python/feature_schema.py`.
+Next action: create `python/datasets/training_features_loader.py`.
 
 ---
 
@@ -35,8 +35,8 @@ Next action: create `python/feature_schema.py`.
 
 | Gate | Name | Status | Exit commit | Notes |
 |---|---|---|---|---|
-| G1 | Schema contract | ☐ not started | — | `python/feature_schema.py` enumerating all 133 cols |
-| G2 | Masked dataset loader | ☐ blocked on G1 | — | `python/datasets/training_features_loader.py` |
+| G1 | Schema contract | ✅ complete | fbc1138 (2026-04-17) | `python/feature_schema.py` + 25 unit tests, all passing |
+| G2 | Masked dataset loader | ◐ in progress | — | `python/datasets/training_features_loader.py` |
 | G3 | TFT + PINN model | ☐ blocked on G2 | — | `python/tft_pinn_model.py` replacing `_SimpleTftModel` |
 | G4 | Physics loss | ☐ blocked on G3 | — | `python/physics_loss.py` (drag ODE, monotonicity, quantile) |
 | G5 | ONNX export | ☐ blocked on G4 | — | extend existing `ExportOnnx` RPC, opset ≤ 20 |
@@ -51,17 +51,17 @@ Legend: ☐ not started · ◐ in progress · ✅ complete · ❌ failed/rolled 
 
 Every box must be ticked with (commit hash, date) before the gate is declared complete.
 
-### G1 — Schema contract
+### G1 — Schema contract ✅ COMPLETE (commit fbc1138, 2026-04-17)
 Goal: a single Python module that is the authoritative list of features, enforced at every training run.
 
-- [ ] Create `python/feature_schema.py` with a `FEATURE_SCHEMA: list[ColumnSpec]` where each entry has `{name, dtype, tier (0/1/2), branch ("flat" | "sequence" | "label" | "key" | "drop"), null_policy ("dense" | "sparse" | "phantom" | "mnar"), default_value}`.
-- [ ] Enumerate all **133** columns from `training_features`; total assignment: 7 key/label, 127 flat, 6 drop (phantoms). **The count must sum to 133 exactly** — unit test enforces this.
-- [ ] List phantom-drop columns explicitly: `rc_bz_min`, `dimming_area`, `dimming_asymmetry`, `eit_wave_speed_kms`, `phase8_pred_transit_hours`, `pinn_v1_pred_transit_hours` (the prediction slots re-enter at P6, not now).
-- [ ] Add `SEQUENCE_CHANNELS: list[str]` = 20 OMNI channels + 2 GOES MAG channels (Hp, Bt) → **22 total**. Leave room for SuperMAG (+2 → 24) per RULE-213.
-- [ ] Add `assert_schema_matches_db(conn)` that queries `PRAGMA table_info(training_features)` and aborts with a diff if drift detected.
-- [ ] Unit test `tests/test_feature_schema.py`: (a) len == 133, (b) phantom count == 6, (c) flat count == 127, (d) no duplicate names, (e) `assert_schema_matches_db` passes against live `staging.db`.
-- [ ] `python -m py_compile` + `ruff check --select E,F` clean.
-- [ ] Update §2 gate board and §4 session log with exit commit.
+- [x] Create `python/feature_schema.py` — 133-entry FEATURE_SCHEMA with name, db_type, dtype, role, null_policy, tier, notes. (fbc1138)
+- [x] All 133 columns enumerated: 6 key, 1 label, 105 flat, 6 drop (phantoms), 15 bookkeep. Sums to 133. (fbc1138)
+- [x] Phantom drops listed: rc_bz_min, dimming_area, dimming_asymmetry, eit_wave_speed_kms, phase8_pred_transit_hours, pinn_v1_pred_transit_hours. (fbc1138)
+- [x] SEQUENCE_CHANNELS = 20 OMNI + 2 GOES MAG = 22. SuperMAG expansion hook documented per RULE-213. (fbc1138)
+- [x] assert_schema_matches_db(db_path) raises RuntimeError with diff on any column drift. (fbc1138)
+- [x] 25 unit tests in tests/test_feature_schema.py — counts, integrity, known phantoms, live DB, synthetic drift — 25/25 green. (fbc1138)
+- [x] py_compile + ruff E,F clean. (fbc1138)
+- [x] Gate board and session log updated. (fbc1138)
 
 ### G2 — Masked dataset loader
 Goal: produce `(x_flat, m_flat, x_seq, m_seq, y)` batches directly from `training_features` + OMNI Parquet, with correct split handling.
@@ -130,6 +130,15 @@ Goal: confirm Tier 1+2 baseline beats or matches PINN V1 before advancing to P6 
 ## 4. Session Log (append only — never delete)
 
 Every session that touches any gate must add an entry. One entry per session, in reverse-chronological order (newest at top).
+
+### 2026-04-17 — G1 complete
+- Agent: Claude Sonnet 4.6 (this session)
+- Gate: G1 — Schema Contract
+- Files: `python/feature_schema.py` (new), `python/tests/test_feature_schema.py` (new), `docs/NEURAL_ENSEMBLE_PLAN.md` (updated)
+- Commit: fbc1138
+- Results: 133 cols confirmed against live staging.db; 105 flat (47 dense + 58 sparse); 6 phantoms; 22 sequence channels; 25/25 unit tests passing; lint clean.
+- Key finding: `dst_min_time` (cid 46, TEXT) was absent from initial schema draft — caught by module-level assertion and added as bookkeep. Flat count is 105, not 127 as originally estimated in the plan intro (bookkeep split was larger than anticipated).
+- Next session: G2 — Masked Dataset Loader.
 
 ### 2026-04-17 — Plan authored
 - Agent: Claude (this session, summary id 6dd739c0-...)
