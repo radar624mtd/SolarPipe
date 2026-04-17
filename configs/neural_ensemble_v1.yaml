@@ -1,0 +1,271 @@
+# neural_ensemble_v1
+#
+# Two-headed neural ensemble for CME transit time prediction.
+# Target: MAE <= 3h +/- 2h on the 90-event holdout (split='holdout').
+#
+# Architecture (see docs/NEURAL_ENSEMBLE_PLAN.md, ADR-NE-001):
+#   Stage 1: TFT+PINN sidecar — trains flat encoder (105 features + masks)
+#             + sequence encoder (222 timesteps x 20 OMNI channels + masks)
+#             + quantile head (P10/P50/P90). Physics losses embedded (G4).
+#   Stage 2: ONNX inference — loaded from registry after sidecar export (G5).
+#
+# Data contract (see python/feature_schema.py — NEVER bypass):
+#   table: training_features  (133-col SQLite VIEW in staging.db)
+#   filter: split IS NOT NULL AND exclude = 0
+#   flat features: 105 columns (6 phantom cols auto-dropped by loader)
+#   sequence: data/sequences/{split}_sequences.parquet — 222 x 20 per event
+#   label: transit_time_hours
+#
+# Null handling (ADR-NE-002):
+#   Dense cols (<10% NULL): impute column mean; mask always 1.
+#   Sparse cols (10-95% NULL): impute 0.0, mask=0; learnable null embedding.
+#   Phantom cols (100% NULL): dropped at load — not passed to model.
+#
+# RULE-206: train/holdout split (1884/90) must be preserved exactly.
+# Use filter: split IS NOT NULL to exclude the 7444 non-event rows in the VIEW.
+
+name: neural_ensemble_v1
+
+data_sources:
+  training_features:
+    provider: sqlite
+    connection_string: "Data Source=data/data/staging/staging.db"
+    options:
+      table: training_features
+      filter: "split IS NOT NULL AND exclude = 0"
+      # sentinel conversion: 9999.9 and -1e31 -> NaN at load time (RULE-204)
+
+  omni_sequences:
+    provider: parquet
+    # Built by: python3.12 scripts/build_pinn_sequences.py
+    # Shape: (N_events, 222, 20) — 222 timesteps, 20 OMNI channels
+    # Channel names defined in python/feature_schema.py::SEQUENCE_CHANNELS
+    connection_string: "data/sequences"
+    options:
+      train_file: train_sequences.parquet
+      holdout_file: holdout_sequences.parquet
+
+stages:
+  # ---------------------------------------------------------------------------
+  # Stage 1: TFT + PINN training via Python gRPC sidecar
+  # ---------------------------------------------------------------------------
+  tft_pinn_encoder:
+    framework: python_grpc
+    model_type: TftPinn
+    data_source: training_features
+    sequence_source: omni_sequences
+
+    # Flat feature columns — all 105 from feature_schema.FLAT_COLS
+    # Phantom cols (dimming_area, dimming_asymmetry, eit_wave_speed_kms,
+    # rc_bz_min, phase8_pred_transit_hours, pinn_v1_pred_transit_hours)
+    # are dropped automatically by the loader — do NOT list them here.
+    features:
+      # --- Tier 0: CME kinematics ---
+      - cme_speed_kms
+      - cme_half_angle_deg
+      - cme_latitude
+      - cme_longitude
+      - cme_mass_grams
+      - cme_angular_width_deg
+      - cme_tilt_angle_deg
+      # --- Tier 0: CDAW 2nd-order kinematics ---
+      - cdaw_linear_speed_kms
+      - cdaw_angular_width_deg
+      - cdaw_mass_log10
+      - cdaw_ke_log10
+      - cdaw_matched
+      - cdaw_mass_quality
+      - second_order_speed_init
+      - second_order_speed_final
+      - second_order_speed_20Rs
+      - accel_kms2
+      - mpa_deg
+      # --- Tier 0: SHARP magnetic keywords ---
+      - usflux
+      - meangam
+      - meangbt
+      - meangbz
+      - meangbh
+      - meanjzd
+      - totusjz
+      - meanjzh
+      - totusjh
+      - absnjzh
+      - meanalp
+      - savncpp
+      - meanpot
+      - totpot
+      - meanshr
+      - shrgt45
+      - r_value
+      - area_acr
+      - sharp_available
+      # --- Tier 0: ambient solar wind ---
+      - sw_speed_ambient
+      - sw_density_ambient
+      - sw_bt_ambient
+      - sw_bz_ambient
+      - delta_v_kms
+      # --- Tier 0: OMNI 24h pre-launch ---
+      - omni_24h_bz_mean
+      - omni_24h_bz_std
+      - omni_24h_bz_min
+      - omni_24h_speed_mean
+      - omni_24h_density_mean
+      - omni_24h_pressure_mean
+      - omni_24h_ae_max
+      - omni_24h_dst_min
+      - omni_24h_kp_max
+      # --- Tier 0: OMNI 48h pre-launch ---
+      - omni_48h_density_spike_max
+      - omni_48h_speed_gradient
+      # --- Tier 0: OMNI 150h pre-launch ---
+      - omni_150h_density_median
+      - omni_150h_speed_median
+      # --- Tier 0: space weather indices ---
+      - f10_7
+      - sunspot_number
+      - dst_min_nt
+      - kp_max
+      - storm_threshold_met
+      # --- Tier 0: flares ---
+      - flare_class_numeric
+      - has_flare
+      - flare_source_longitude
+      - goes_peak_flux_wm2
+      # --- Tier 0: HCS tilt ---
+      - hcs_tilt_angle
+      - hcs_distance
+      - hcs_tilt_classic_deg
+      - hcs_tilt_radial_deg
+      # --- Tier 0: Type II radio ---
+      - has_type2_burst
+      - type2_start_freq_mhz
+      - type2_end_freq_mhz
+      # --- Tier 0: ENLIL ---
+      - enlil_predicted_arrival_hours
+      - enlil_au
+      - enlil_matched
+      # --- Tier 0: multi-CME context ---
+      - preceding_cme_count_48h
+      - preceding_cme_speed_max
+      - preceding_cme_speed_mean
+      - preceding_cme_angular_sep_min
+      - is_multi_cme
+      # --- Tier 0: clustering ---
+      - cluster_id_k5
+      - cluster_id_k8
+      - cluster_id_k12
+      - cluster_id_dbscan
+      - cluster_assigned
+      # --- Tier 1: R&C ICME ---
+      - rc_icme_type
+      - rc_bde_flag
+      - rc_v_icme
+      - rc_b_max
+      - rc_matched
+      # --- Tier 1: HEK flags ---
+      - has_coronal_dimming
+      - has_eit_wave
+      - has_filament_eruption
+      - has_sigmoid
+      # --- Tier 1: DONKI SEP ---
+      - has_sep
+      - sep_onset_delay_hours
+      # --- Tier 1: PFSS ---
+      - pfss_field_type
+      - pfss_open_fraction_10deg
+      - pfss_ch_distance_deg
+      - pfss_polarity
+      # --- Tier 2: DONKI MPC ---
+      - has_mpc
+      - mpc_delay_hours
+      # --- Tier 2: STEREO-A ---
+      - stereo_available
+      - stereo_speed_ambient
+      - stereo_density_ambient
+      - stereo_lead_hours
+
+    target: transit_time_hours
+
+    hyperparameters:
+      # --- Model architecture ---
+      flat_hidden_dim: 256        # MLP hidden size for flat encoder
+      flat_n_residual_blocks: 2   # residual blocks in flat encoder
+      seq_hidden_dim: 128         # TFT hidden size (d_model)
+      seq_n_heads: 4              # multi-head attention heads
+      seq_n_layers: 2             # TFT encoder layers
+      seq_dropout: 0.1
+      null_embedding_dim: 16      # learnable null embedding per sparse column
+      quantiles: [0.1, 0.5, 0.9] # P10/P50/P90
+
+      # --- Training ---
+      learning_rate: 1.0e-3
+      batch_size: 64
+      max_epochs: 200
+      early_stopping_patience: 20
+      gradient_clip_norm: 1.0
+      seed: 42
+
+      # --- Physics loss weights (G4) ---
+      # Set to 0.0 to disable until G4 physics_loss.py is wired
+      lambda_ode: 0.0       # drag ODE residual (enable after G4)
+      lambda_mono: 0.0      # monotonic decay hinge (enable after G4)
+      lambda_bound: 0.1     # transit time physical bounds [12h, 120h]
+      lambda_qorder: 0.5    # quantile ordering consistency
+
+      # --- Physics ODE parameters (for drag residual loss) ---
+      drag_gamma_cm: 2.0e-8     # baseline drag coefficient (cm^-1)
+      v_sw_ref_kms: 400.0       # reference solar wind speed (km/s)
+      n_ref_cm3: 5.0            # reference proton density for gamma_eff scaling
+
+      # --- Feature flag: use TFT+PINN vs old LSTM stub ---
+      use_tft_pinn: true        # set false to fall back to _SimpleTftModel
+
+  # ---------------------------------------------------------------------------
+  # Stage 2: ONNX inference (wired after G5 export)
+  # ---------------------------------------------------------------------------
+  # tft_pinn_inference:
+  #   framework: onnx
+  #   model_type: NeuralEnsemble
+  #   data_source: training_features
+  #   sequence_source: omni_sequences
+  #   # Populated after G5 ONNX export and registry entry
+  #   model_artifact: neural_ensemble_v1/tft_pinn_encoder
+  #   # Named inputs (must match ExportOnnx output):
+  #   #   x_flat (float32, [B, 105])
+  #   #   m_flat (float32, [B, 105])
+  #   #   x_seq  (float32, [B, 222, 20])
+  #   #   m_seq  (float32, [B, 222, 20])
+  #   # Named outputs: p10, p50, p90 (float32, [B, 1] each)
+
+evaluation:
+  method: temporal_cv
+  n_folds: 5
+  gap_days: 5                    # temporal gap buffer (RULE-051)
+  calibration_fold: last         # last fold is calibration-only (RULE-164)
+  metrics:
+    - mae                        # primary: CME transit time MAE (hours)
+    - rmse
+    - bias
+    - pinball_p10
+    - pinball_p50
+    - pinball_p90
+    - quantile_coverage          # fraction of events where true in [P10, P90]
+
+  # G7 quality gate: holdout MAE must be <= 6.0h before P6 ensemble head
+  quality_gate:
+    metric: mae
+    split: holdout
+    threshold: 6.0
+    on_failure: abort            # do not advance to P6 if gate fails
+
+checkpointing:
+  # Hypothesis-scoped per RULE-162
+  path_template: "{SOLARPIPE_CACHE}/sweeps/neural_ensemble_v1/{stage_name}/"
+  resume_on_restart: true
+
+output:
+  predictions_path: "output/neural_ensemble_v1/"
+  log_metrics: true
+  export_onnx_on_completion: false   # set true after G5 wiring complete

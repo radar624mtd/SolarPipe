@@ -25,9 +25,9 @@
 
 ## 1. Current Gate
 
-**→ G2 — Masked Dataset Loader** (G1 complete as of 2026-04-17, commit fbc1138)
+**→ G3 — TFT + PINN Model** (G2 complete as of 2026-04-17, commit f7c6074)
 
-Next action: create `python/datasets/training_features_loader.py`.
+Next action: create `python/tft_pinn_model.py` replacing `_SimpleTftModel` stub.
 
 ---
 
@@ -36,8 +36,8 @@ Next action: create `python/datasets/training_features_loader.py`.
 | Gate | Name | Status | Exit commit | Notes |
 |---|---|---|---|---|
 | G1 | Schema contract | ✅ complete | fbc1138 (2026-04-17) | `python/feature_schema.py` + 25 unit tests, all passing |
-| G2 | Masked dataset loader | ◐ in progress | — | `python/datasets/training_features_loader.py` |
-| G3 | TFT + PINN model | ☐ blocked on G2 | — | `python/tft_pinn_model.py` replacing `_SimpleTftModel` |
+| G2 | Masked dataset loader | ✅ complete | f7c6074 (2026-04-17) | 18 unit tests passing; 1884 train + 90 holdout; split-leak guard |
+| G3 | TFT + PINN model | ◐ in progress | — | `python/tft_pinn_model.py` replacing `_SimpleTftModel` |
 | G4 | Physics loss | ☐ blocked on G3 | — | `python/physics_loss.py` (drag ODE, monotonicity, quantile) |
 | G5 | ONNX export | ☐ blocked on G4 | — | extend existing `ExportOnnx` RPC, opset ≤ 20 |
 | G6 | C# wiring + YAML | ☐ blocked on G5 | — | `configs/neural_ensemble_v1.yaml` + `OnnxAdapter` round-trip |
@@ -63,16 +63,16 @@ Goal: a single Python module that is the authoritative list of features, enforce
 - [x] py_compile + ruff E,F clean. (fbc1138)
 - [x] Gate board and session log updated. (fbc1138)
 
-### G2 — Masked dataset loader
+### G2 — Masked dataset loader ✅ COMPLETE (commit f7c6074, 2026-04-17)
 Goal: produce `(x_flat, m_flat, x_seq, m_seq, y)` batches directly from `training_features` + OMNI Parquet, with correct split handling.
 
-- [ ] Create `python/datasets/training_features_loader.py` exposing `TrainingFeaturesDataset(split: "train"|"holdout", db_path, sequences_path)`.
-- [ ] Flat branch: read via SQL `SELECT * FROM training_features WHERE split = ? AND exclude = 0 ORDER BY launch_time`. Apply schema: drop phantoms, cast to float32 where numeric, categorical → integer codes with NULL → -1 sentinel, then mask NaN → 0.0 with mask=0.
-- [ ] Sequence branch: join to pre-built Parquet from `scripts/build_pinn_sequences.py` by `activity_id`. Shape assert `(B, 150, 22)` after Tier 2 GOES MAG channels included (run the updated builder first — track in Session Log).
-- [ ] Split-leak guard: `assert set(holdout.activity_id) ∩ set(train.activity_id) == ∅`.
-- [ ] Deterministic order: sort by `launch_time` ascending so temporal splits remain reproducible.
-- [ ] Unit tests: (a) no NaN in output tensors, (b) mask==0 everywhere x==0-by-imputation, (c) shapes match schema, (d) `len(train)==1884`, `len(holdout)==90`.
-- [ ] Update §2 and §4.
+- [x] `python/datasets/training_features_loader.py`: `TrainingFeaturesDataset(split, db_path, sequences_path)`. (f7c6074)
+- [x] Flat branch: SQL read, phantom drop, float32 cast, NaN→0 imputation, mask=0. (f7c6074)
+- [x] Sequence branch: 222-timestep x 20-channel Parquet join; GOES MAG channels zero-padded until Parquet rebuilt. Actual shape (B,222,20) until RULE-213 Parquet rebuild. (f7c6074)
+- [x] Split-leak guard: `_assert_no_split_leak()` raises RuntimeError on overlap; tested with synthetic DB. (f7c6074)
+- [x] Deterministic order: `ORDER BY launch_time ASC`. (f7c6074)
+- [x] 18 unit tests: count (1884 train/90 holdout), shapes, no-NaN, mask binary, dense coverage ≥90%, MNAR sparse col, split-leak trigger — 18/18 green. (f7c6074)
+- [x] §2 and §4 updated. (this session)
 
 ### G3 — TFT + PINN model
 Goal: replace `_SimpleTftModel` with a real TFT that consumes masks and emits quantile predictions.
@@ -130,6 +130,14 @@ Goal: confirm Tier 1+2 baseline beats or matches PINN V1 before advancing to P6 
 ## 4. Session Log (append only — never delete)
 
 Every session that touches any gate must add an entry. One entry per session, in reverse-chronological order (newest at top).
+
+### 2026-04-17 — G2 complete; YAML config + CLAUDE.md update (session 2)
+- Agent: Claude Sonnet 4.6
+- Gates: G2 confirmed complete (commit f7c6074); G3 in progress this session.
+- Files: `docs/NEURAL_ENSEMBLE_PLAN.md` (G2 ticked, session log), `configs/neural_ensemble_v1.yaml` (new), `CLAUDE.md` (Active Phase updated to reflect Tier 2 complete + G1/G2 done).
+- Key finding: existing sequence Parquet uses 222 timesteps (150h pre-launch + 72h post), not 150; 20 OMNI channels with different naming convention than initial schema draft. Channel map reconciled in feature_schema.py (f7c6074). GOES MAG channels padded as NaN until Parquet rebuild.
+- Blockers: none for G3. pytorch-forecasting must be added to requirements.txt before G3 model file.
+- Next: G3 TFT+PINN model file.
 
 ### 2026-04-17 — G1 complete
 - Agent: Claude Sonnet 4.6 (this session)
