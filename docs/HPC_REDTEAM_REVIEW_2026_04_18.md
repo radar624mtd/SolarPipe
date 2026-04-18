@@ -145,7 +145,7 @@ Only meaningful once the GPU path is confirmed. Produces the single source of tr
 - [x] Per-stage times sum to within 5% of end-to-end: 21.4+14+1.7=37.1s vs ~38–40s measured (< 5% gap). ✅
 - [x] Baseline re-run within noise floor (±3%). ✅
 - [x] Boundary-events measurement method named in file (`dotnet-counters` + Nsight Systems). ✅
-- [x] File committed; commit hash: _(see session log — commit in progress)_.
+- [x] File committed; commit hash: 6740308 (2026-04-18).
 
 ---
 

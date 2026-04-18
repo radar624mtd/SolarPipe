@@ -209,7 +209,7 @@ Only measurable once the GPU path is confirmed. Produces the single source of tr
 - [x] Stage-level times sum within 5% of end-to-end: 37.1s vs ~38–40s measured. ✅
 - [x] Baseline re-run within noise floor (±3%). ✅
 - [x] Boundary-events measurement method named in file. ✅
-- [x] File committed to git; commit hash: _(see session log)_.
+- [x] File committed to git; commit hash: 6740308 (2026-04-18).
 
 ---
 
