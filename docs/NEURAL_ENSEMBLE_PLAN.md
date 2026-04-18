@@ -40,7 +40,7 @@ G6 round-trip confirmed: train (tft_pinn_943e0a87, 200 epochs, 1579 rows) → Ex
 | G3 | TFT + PINN model | ✅ complete | e55a7ce (2026-04-17) | Hand-rolled TFT-style transformer (pytorch-forecasting rejected — see §G3 rationale); 15/15 tests passing |
 | G4 | Physics loss | ✅ complete | 2748bbe (2026-04-17) | `python/physics_loss.py` + 30 unit tests (incl. FD-grad checks, C# unit parity); γ₀ unit bug fixed (cm⁻¹ → km⁻¹) |
 | G5 | ONNX export | ✅ complete | pending-commit (2026-04-17) | `_export_tft_pinn_onnx` + `_train_tft_pinn` + `_predict_tft_pinn` in solarpipe_server.py; `use_tft_pinn` flag wired; 7/7 parity tests (PyTorch↔ORT max|diff|≤1e-4) |
-| G6 | C# wiring + YAML | ✅ complete | pending-commit (2026-04-18) | Round-trip confirmed: train→ExportOnnx→ONNX stage→holdout eval (90 events). Normalization fix + NaN guard added. |
+| G6 | C# wiring + YAML | ✅ complete | 184ec83 (2026-04-18) | Round-trip confirmed: train→ExportOnnx→ONNX stage→holdout eval (90 events). Normalization fix + NaN guard added. |
 | G7 | Holdout quality gate | ◐ in progress | — | MAE=30.02h baseline (first run, underfitting). Need hyperparameter tuning to reach ≤6h. |
 
 Legend: ☐ not started · ◐ in progress · ✅ complete · ❌ failed/rolled back
@@ -148,9 +148,9 @@ Goal: full train → export → predict round-trip through the CLI.
 
 - [x] Create `configs/neural_ensemble_v1.yaml` with `table: training_features`, `filter: split IS NOT NULL AND exclude = 0`, `features: [105 flat cols = FLAT_COLS]`, sidecar training stage (`python_grpc` / `TftPinn`) + onnx predict stage.
 - [x] Run `dotnet run --project src/SolarPipe.Host -- validate --config configs/neural_ensemble_v1.yaml` — passes ("OK config=... stages=2 sources=1").
-- [x] Run `train` then `predict` end-to-end; capture holdout MAE in `output/neural_ensemble_v1/`. (pending-commit, 2026-04-18) — tft_pinn_943e0a87, MAE=30.02h, 90 events, all scored.
+- [x] Run `train` then `predict` end-to-end; capture holdout MAE in `output/neural_ensemble_v1/`. (184ec83, 2026-04-18) — tft_pinn_943e0a87, MAE=30.02h, 90 events, all scored.
 - [x] `dotnet test --filter Category=Pipeline` passes (3/3).
-- [x] Update §2 and §4 with exit commit. (pending-commit, 2026-04-18)
+- [x] Update §2 and §4 with exit commit. (184ec83, 2026-04-18)
 
 **G6 infrastructure bugs fixed (session 5, 2026-04-17):**
 - `TrainCommand.ResolveAdapter`: `python_grpc` (YAML snake_case) failed to match `PythonGrpc` enum — fixed with underscore-strip normalize.
@@ -179,6 +179,7 @@ Every session that touches any gate must add an entry. One entry per session, in
 
 ### 2026-04-18 — G6 complete; round-trip confirmed; normalization fix (session 6)
 - Agent: Claude Sonnet 4.6
+- Commit: 184ec83
 - Gate: G6 complete → G7 in progress.
 - Files changed: `python/solarpipe_server.py` (per-column z-score normalization of x_flat before training + feat_mean/feat_std saved to meta.json + NaN-loss batch skip guard; inference-time normalization in `_predict_tft_pinn`); `src/SolarPipe.Host/Commands/TrainCommand.cs` (timeout_minutes HP reads from stage config, default 30); `src/SolarPipe.Training/Adapters/OnnxTrainedModel.cs` (GetStringColumn for activity_id, LoadPinnSequencesParquet takes string[], SaveAsync writes placeholder file); `configs/neural_ensemble_v1.yaml` (timeout_minutes: 90, model_path updated to tft_pinn_943e0a87).
 - Outcome: tft_pinn_943e0a87 trained 200 epochs (1579 rows, no NaN weights, no timeout). ONNX exported opset=17. Holdout MAE=30.02h, RMSE=34.27h, Bias=+17.7h, P10-P90 coverage=6.7%. 381/381 unit tests green.
