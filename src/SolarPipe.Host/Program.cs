@@ -44,7 +44,11 @@ internal static class Program
             "validate-events" => await services.GetRequiredService<ValidateEventsCommand>().ExecuteAsync(commandArgs, cts.Token),
             "sweep"           => await services.GetRequiredService<SweepCommand>().ExecuteAsync(commandArgs, cts.Token),
             "domain-sweep"    => await services.GetRequiredService<DomainSweepCommand>().ExecuteAsync(commandArgs, cts.Token),
-            "predict-progressive" => await services.GetRequiredService<PredictProgressiveCommand>().ExecuteAsync(commandArgs, cts.Token),
+            "predict-progressive"  => await services.GetRequiredService<PredictProgressiveCommand>().ExecuteAsync(commandArgs, cts.Token),
+            "fetch-synoptic-map"          => await new FetchSynopticMapCommand().ExecuteAsync(commandArgs, cts.Token),
+            "compute-pfss-topology"       => await new ComputePfssTopologyCommand().ExecuteAsync(commandArgs, cts.Token),
+            "compute-pfss-mmap"           => await new ComputePfssMmapCommand().ExecuteAsync(commandArgs, cts.Token),
+            "read-mmap"                   => await services.GetRequiredService<ReadMmapCommand>().ExecuteAsync(commandArgs, cts.Token),
             _ => UnknownCommand(command),
         };
     }
@@ -64,7 +68,7 @@ internal static class Program
 
         var mlNetAdapter     = new MlNetAdapter();
         var physicsAdapter   = new PhysicsAdapter();
-        var adapters = new IFrameworkAdapter[] { mlNetAdapter, physicsAdapter };
+        var onnxAdapter      = new OnnxAdapter();
 
         var modelRegistry = new FileSystemModelRegistry(registryPath);
         var configLoader = new PipelineConfigLoader();
@@ -93,9 +97,9 @@ internal static class Program
                 NullLogger<SidecarLifecycleService>.Instance)
             : null;
 
-        var allAdapters = sidecarAdapter is not null
-            ? (IReadOnlyList<IFrameworkAdapter>)new IFrameworkAdapter[] { mlNetAdapter, physicsAdapter, sidecarAdapter }
-            : adapters;
+        IReadOnlyList<IFrameworkAdapter> allAdapters = sidecarAdapter is not null
+            ? new IFrameworkAdapter[] { mlNetAdapter, physicsAdapter, onnxAdapter, sidecarAdapter }
+            : new IFrameworkAdapter[] { mlNetAdapter, physicsAdapter, onnxAdapter };
 
         var modelSweep  = new ModelSweep(allAdapters, metricsEvaluator, nnlsOptimizer,
             cacheRoot, registryPath, sidecarAdapter);
@@ -104,7 +108,7 @@ internal static class Program
         return new ServiceCollection()
             .AddSingleton(configLoader)
             .AddSingleton(dataRegistry)
-            .AddSingleton<IReadOnlyList<IFrameworkAdapter>>(adapters)
+            .AddSingleton<IReadOnlyList<IFrameworkAdapter>>(allAdapters)
             .AddSingleton<IModelRegistry>(modelRegistry)
             .AddSingleton(checkpointManager)
             .AddSingleton<ValidateCommand>()
@@ -128,6 +132,7 @@ internal static class Program
                 sp.GetRequiredService<IReadOnlyList<IFrameworkAdapter>>(),
                 domainSweep))
             .AddSingleton(sp => new PredictProgressiveCommand(domainSweepLoader))
+            .AddSingleton<ReadMmapCommand>()
             .BuildServiceProvider();
     }
 
@@ -153,5 +158,8 @@ internal static class Program
         Console.WriteLine("  predict-progressive --config <path> [--event <iso> --until <iso> | --backtest]");
         Console.WriteLine("                      [--mode density|static] [--n-ref <cm-3>] [--output <dir>]");
         Console.WriteLine("                      [--omni-db <conn>] [--allow-future]");
+        Console.WriteLine("  fetch-synoptic-map      --cr <number> --output <path> [--cache <dir>]");
+        Console.WriteLine("  compute-pfss-topology   --db <path> [--workers N] [--cr-cache <dir>] [--force] [--max-events N]");
+        Console.WriteLine("  read-mmap               --map-name <name> --rows <num_rows> --cols <num_cols>");
     }
 }

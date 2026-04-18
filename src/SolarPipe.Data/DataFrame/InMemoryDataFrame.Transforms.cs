@@ -20,7 +20,16 @@ public sealed partial class InMemoryDataFrame
             sliced[i] = new float[count];
             Array.Copy(_data[i], startRow, sliced[i], 0, count);
         }
-        return new InMemoryDataFrame(_schema, sliced);
+
+        Dictionary<string, string[]>? slicedStrings = null;
+        if (_stringColumns is not null)
+        {
+            slicedStrings = new Dictionary<string, string[]>(_stringColumns.Count, StringComparer.OrdinalIgnoreCase);
+            foreach (var kv in _stringColumns)
+                slicedStrings[kv.Key] = kv.Value.Skip(startRow).Take(count).ToArray();
+        }
+
+        return new InMemoryDataFrame(_schema, sliced, slicedStrings);
     }
 
     public IDataFrame SelectColumns(params string[] columns)
@@ -40,7 +49,22 @@ public sealed partial class InMemoryDataFrame
             newData[i] = _data[srcIdx];
         }
 
-        return new InMemoryDataFrame(new DataSchema(newCols), newData);
+        // Propagate string columns that are selected.
+        Dictionary<string, string[]>? selectedStrings = null;
+        if (_stringColumns is not null)
+        {
+            var columnSet = new HashSet<string>(columns, StringComparer.OrdinalIgnoreCase);
+            foreach (var kv in _stringColumns)
+            {
+                if (columnSet.Contains(kv.Key))
+                {
+                    selectedStrings ??= new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase);
+                    selectedStrings[kv.Key] = kv.Value;
+                }
+            }
+        }
+
+        return new InMemoryDataFrame(new DataSchema(newCols), newData, selectedStrings);
     }
 
     public IDataFrame AddColumn(string name, float[] values)

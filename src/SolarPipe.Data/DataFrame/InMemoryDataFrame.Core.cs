@@ -9,12 +9,14 @@ public sealed partial class InMemoryDataFrame : IDataFrame
 {
     private readonly float[][] _data;          // column-major: _data[col][row]
     private readonly DataSchema _schema;
+    private readonly Dictionary<string, string[]>? _stringColumns;
     private bool _disposed;
 
     public DataSchema Schema => _schema;
     public int RowCount { get; }
 
-    public InMemoryDataFrame(DataSchema schema, float[][] data)
+    public InMemoryDataFrame(DataSchema schema, float[][] data,
+        Dictionary<string, string[]>? stringColumns = null)
     {
         if (schema is null) throw new ArgumentNullException(nameof(schema));
         if (data is null) throw new ArgumentNullException(nameof(data));
@@ -25,10 +27,14 @@ public sealed partial class InMemoryDataFrame : IDataFrame
 
         _schema = schema;
         _data = data;
+        _stringColumns = stringColumns;
         RowCount = data.Length == 0 ? 0 : data[0].Length;
 
         ValidateColumnLengths();
     }
+
+    public string[]? GetStringColumn(string name) =>
+        _stringColumns is not null && _stringColumns.TryGetValue(name, out var arr) ? arr : null;
 
     public float[] GetColumn(string name)
     {

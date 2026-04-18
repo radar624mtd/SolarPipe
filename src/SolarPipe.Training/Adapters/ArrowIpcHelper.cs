@@ -89,8 +89,12 @@ public static class ArrowIpcHelper
         var builder = new Apache.Arrow.Schema.Builder();
         foreach (var col in frame.Schema.Columns)
         {
-            // RULE-063: All columns are float32. Never emit float64 across the gRPC boundary.
-            builder.Field(new Field(col.Name, Apache.Arrow.Types.FloatType.Default, nullable: true));
+            // String columns (e.g. activity_id) written as StringType for sidecar join keys.
+            // All other columns follow RULE-063: float32.
+            if (col.Type == Core.Models.ColumnType.String)
+                builder.Field(new Field(col.Name, Apache.Arrow.Types.StringType.Default, nullable: true));
+            else
+                builder.Field(new Field(col.Name, Apache.Arrow.Types.FloatType.Default, nullable: true));
         }
         return builder.Build();
     }
@@ -100,11 +104,24 @@ public static class ArrowIpcHelper
         var result = new List<IArrowArray>(frame.Schema.Columns.Count);
         for (int c = 0; c < frame.Schema.Columns.Count; c++)
         {
-            float[] data = frame.GetColumn(c);
-            var builder = new FloatArray.Builder();
-            foreach (float v in data)
-                builder.Append(float.IsNaN(v) ? null : (float?)v);
-            result.Add(builder.Build());
+            var col = frame.Schema.Columns[c];
+            if (col.Type == Core.Models.ColumnType.String)
+            {
+                // Write raw string values if available; fallback to empty strings.
+                var strData = frame.GetStringColumn(col.Name) ?? new string[frame.RowCount];
+                var sb = new StringArray.Builder();
+                foreach (var s in strData)
+                    sb.Append(string.IsNullOrEmpty(s) ? null : s);
+                result.Add(sb.Build());
+            }
+            else
+            {
+                float[] data = frame.GetColumn(c);
+                var fb = new FloatArray.Builder();
+                foreach (float v in data)
+                    fb.Append(float.IsNaN(v) ? null : (float?)v);
+                result.Add(fb.Build());
+            }
         }
         return result;
     }

@@ -17,6 +17,7 @@ public sealed class SqliteProvider : IDataSourceProvider
         var table = RequireTable(config);
         using var conn = new SqliteConnection(config.ConnectionString);
         await conn.OpenAsync(ct);
+        await ApplyPragmasAsync(conn);
 
         var cols = new List<ColumnInfo>();
         using var cmd = conn.CreateCommand();
@@ -44,6 +45,7 @@ public sealed class SqliteProvider : IDataSourceProvider
     {
         using var conn = new SqliteConnection(config.ConnectionString);
         await conn.OpenAsync(ct);
+        await ApplyPragmasAsync(conn);
 
         // RULE-002: derive schema from the actual query result, not PRAGMA table_info.
         // When the caller passes an explicit SQL (e.g. SELECT col1, col2 FROM t), the
@@ -65,6 +67,14 @@ public sealed class SqliteProvider : IDataSourceProvider
                 var name    = reader.GetName(i);
                 var rawType = reader.GetDataTypeName(i).ToUpperInvariant();
                 var colType = InferColumnType(rawType);
+                // VIEW columns often have no declared type (rawType=""). Fall back to
+                // the .NET field type to distinguish strings from numerics.
+                if (colType == ColumnType.Float && string.IsNullOrWhiteSpace(rawType))
+                {
+                    var netType = reader.GetFieldType(i);
+                    if (netType == typeof(string))
+                        colType = ColumnType.String;
+                }
                 // Promote String columns whose name hints at a timestamp to DateTime
                 // so BuildFolds in ModelSweep can detect the temporal ordering column.
                 if (colType == ColumnType.String && IsTimeColumnName(name))
@@ -79,19 +89,53 @@ public sealed class SqliteProvider : IDataSourceProvider
         for (int i = 0; i < columnBuffers.Length; i++)
             columnBuffers[i] = new List<float>();
 
+        // Also buffer raw string values for ColumnType.String columns (e.g. activity_id).
+        // These are preserved for Arrow IPC pass-through to the gRPC sidecar.
+        Dictionary<int, List<string>>? stringBuffers = null;
+        for (int i = 0; i < resultSchema.Columns.Count; i++)
+        {
+            if (resultSchema.Columns[i].Type == ColumnType.String)
+            {
+                stringBuffers ??= new Dictionary<int, List<string>>();
+                stringBuffers[i] = new List<string>();
+            }
+        }
+
         while (await reader.ReadAsync(ct))
         {
             for (int col = 0; col < resultSchema.Columns.Count; col++)
             {
-                float value = reader.IsDBNull(col)
-                    ? float.NaN
-                    : ToFloat(reader.GetValue(col), resultSchema.Columns[col]);
-                columnBuffers[col].Add(value);
+                if (reader.IsDBNull(col))
+                {
+                    columnBuffers[col].Add(float.NaN);
+                    stringBuffers?.GetValueOrDefault(col)?.Add(string.Empty);
+                }
+                else
+                {
+                    var raw = reader.GetValue(col);
+                    columnBuffers[col].Add(ToFloat(raw, resultSchema.Columns[col]));
+                    if (stringBuffers?.TryGetValue(col, out var sb) == true)
+                        sb.Add(raw?.ToString() ?? string.Empty);
+                }
             }
         }
 
         var data = columnBuffers.Select(b => b.ToArray()).ToArray();
-        return new DataFrame.InMemoryDataFrame(resultSchema, data);
+        Dictionary<string, string[]>? stringCols = null;
+        if (stringBuffers is not null)
+        {
+            stringCols = new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase);
+            foreach (var kv in stringBuffers)
+                stringCols[resultSchema.Columns[kv.Key].Name] = kv.Value.ToArray();
+        }
+        return new DataFrame.InMemoryDataFrame(resultSchema, data, stringCols);
+    }
+
+    private static async Task ApplyPragmasAsync(SqliteConnection conn)
+    {
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;";
+        await cmd.ExecuteNonQueryAsync();
     }
 
     // --- helpers ---

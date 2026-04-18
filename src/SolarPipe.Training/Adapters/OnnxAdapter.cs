@@ -9,6 +9,10 @@ namespace SolarPipe.Training.Adapters;
 //
 // ModelType "NeuralOde" → RULE-070: loads dynamics network f(y,t,θ) only;
 //   full ODE integration (Dormand-Prince) happens in OnnxTrainedModel.PredictAsync.
+// ModelType "TftPinn" → G5 named-input graph:
+//   inputs  x_flat (B, N_FLAT), m_flat (B, N_FLAT), x_seq (B, T, C), m_seq (B, T, C)
+//   outputs p10 (B, 1), p50 (B, 1), p90 (B, 1)
+//   OnnxTrainedModel.PredictAsync returns P50 in Values, P10/P90 in LowerBound/UpperBound.
 // All other ModelTypes → standard ONNX inference (single forward pass).
 //
 // Hyperparameter key "model_path" (snake_case, OrdinalIgnoreCase) is required.
@@ -16,7 +20,7 @@ public sealed class OnnxAdapter : IFrameworkAdapter
 {
     public FrameworkType FrameworkType => FrameworkType.Onnx;
 
-    public IReadOnlyList<string> SupportedModels => ["Standard", "NeuralOde"];
+    public IReadOnlyList<string> SupportedModels => ["Standard", "NeuralOde", "TftPinn"];
 
     public Task<ITrainedModel> TrainAsync(
         StageConfig config,
@@ -39,6 +43,7 @@ public sealed class OnnxAdapter : IFrameworkAdapter
                 $"ONNX model file not found. Stage: '{config.Name}', path: '{modelPath}'.", modelPath);
 
         bool isNeuralOde = config.ModelType.Equals("NeuralOde", StringComparison.OrdinalIgnoreCase);
+        bool isTftPinn = config.ModelType.Equals("TftPinn", StringComparison.OrdinalIgnoreCase);
 
         var options = new SessionOptions();
         // Deterministic execution where possible
@@ -47,7 +52,12 @@ public sealed class OnnxAdapter : IFrameworkAdapter
         var session = new InferenceSession(modelPath, options);
 
         var metrics = new ModelMetrics(double.NaN, double.NaN, double.NaN);
-        ITrainedModel model = new OnnxTrainedModel(config, session, isNeuralOde, metrics);
+        var mode = isNeuralOde
+            ? OnnxInferenceMode.NeuralOde
+            : isTftPinn
+                ? OnnxInferenceMode.TftPinn
+                : OnnxInferenceMode.Standard;
+        ITrainedModel model = new OnnxTrainedModel(config, session, mode, metrics);
         return Task.FromResult(model);
     }
 

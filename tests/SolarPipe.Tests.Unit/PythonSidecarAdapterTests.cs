@@ -142,4 +142,111 @@ public sealed class PythonSidecarAdapterTests : IDisposable
 
         healthy.Should().BeFalse("no server on port 19997 means health check must return false");
     }
+
+    // ─── G6: String column write/preserve through Arrow IPC ─────────────────────────
+
+    [Fact]
+    public async Task ArrowIpcHelper_WriteAsync_StringColumn_WritesAsArrowStringType()
+    {
+        // G6: activity_id is ColumnType.String — must be emitted as Arrow StringType
+        // so the Python sidecar can read it without float-NaN corruption.
+        string[] ids = ["2010-04-03T09:54:00-CME-001", "2010-06-13T07:32:00-CME-001", ""];
+        float[] speeds = [620f, 500f, 350f];
+        var schema = new DataSchema([
+            new ColumnInfo("activity_id", ColumnType.String, true),
+            new ColumnInfo("cme_speed_kms", ColumnType.Float, false),
+        ]);
+        var strCols = new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["activity_id"] = ids,
+        };
+        using var frame = new InMemoryDataFrame(schema, [new float[3], speeds], strCols);
+
+        string arrowPath = Path.Combine(_tempDir, "string_col.arrow");
+        await ArrowIpcHelper.WriteAsync(frame, arrowPath, CancellationToken.None);
+
+        // Read back with Apache.Arrow directly to verify StringType
+        await using var stream = File.OpenRead(arrowPath);
+        using var reader = new ArrowFileReader(stream);
+        var batch = await reader.ReadNextRecordBatchAsync();
+        batch.Should().NotBeNull();
+
+        var activityField = batch!.Schema.GetFieldByIndex(0);
+        activityField.Name.Should().Be("activity_id");
+        activityField.DataType.TypeId.Should().Be(Apache.Arrow.Types.ArrowTypeId.String,
+            "activity_id is ColumnType.String and must survive Arrow IPC as StringType, not float32");
+
+        var stringArray = (StringArray)batch.Column(0);
+        stringArray.GetString(0).Should().Be("2010-04-03T09:54:00-CME-001");
+        stringArray.GetString(1).Should().Be("2010-06-13T07:32:00-CME-001");
+        stringArray.IsNull(2).Should().BeTrue("empty string must be emitted as Arrow null");
+    }
+
+    [Fact]
+    public void InMemoryDataFrame_Slice_PropagatesStringColumns()
+    {
+        string[] ids = ["A", "B", "C", "D"];
+        float[] vals = [1f, 2f, 3f, 4f];
+        var schema = new DataSchema([
+            new ColumnInfo("activity_id", ColumnType.String, true),
+            new ColumnInfo("speed", ColumnType.Float, false),
+        ]);
+        var strCols = new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["activity_id"] = ids,
+        };
+        using var frame = new InMemoryDataFrame(schema, [new float[4], vals], strCols);
+
+        using var sliced = (InMemoryDataFrame)frame.Slice(1, 2);
+
+        sliced.RowCount.Should().Be(2);
+        var slicedIds = sliced.GetStringColumn("activity_id");
+        slicedIds.Should().NotBeNull("string columns must survive Slice");
+        slicedIds![0].Should().Be("B");
+        slicedIds[1].Should().Be("C");
+    }
+
+    [Fact]
+    public void InMemoryDataFrame_SelectColumns_PropagatesStringColumns()
+    {
+        string[] ids = ["X", "Y"];
+        float[] speed = [100f, 200f];
+        float[] density = [5f, 6f];
+        var schema = new DataSchema([
+            new ColumnInfo("activity_id", ColumnType.String, true),
+            new ColumnInfo("speed", ColumnType.Float, false),
+            new ColumnInfo("density", ColumnType.Float, false),
+        ]);
+        var strCols = new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["activity_id"] = ids,
+        };
+        using var frame = new InMemoryDataFrame(schema, [new float[2], speed, density], strCols);
+
+        using var selected = (InMemoryDataFrame)frame.SelectColumns("activity_id", "speed");
+
+        selected.Schema.Columns.Should().HaveCount(2);
+        var selectedIds = selected.GetStringColumn("activity_id");
+        selectedIds.Should().NotBeNull("string columns must survive SelectColumns");
+        selectedIds![0].Should().Be("X");
+        selectedIds[1].Should().Be("Y");
+    }
+
+    // ─── G6: TftPinn accepted by OnnxAdapter and GrpcSidecarAdapter ──────────────────
+
+    [Fact]
+    public void OnnxAdapter_SupportedModels_IncludesTftPinn()
+    {
+        var adapter = new OnnxAdapter();
+        adapter.SupportedModels.Should().Contain("TftPinn",
+            "OnnxAdapter must accept TftPinn model type for G6 ONNX inference stage");
+    }
+
+    [Fact]
+    public void GrpcSidecarAdapter_SupportedModels_IncludesTftPinn()
+    {
+        using var adapter = new GrpcSidecarAdapter("http://localhost:19998", _tempDir);
+        adapter.SupportedModels.Should().Contain("TftPinn",
+            "GrpcSidecarAdapter must accept TftPinn for training stage dispatch");
+    }
 }

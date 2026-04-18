@@ -20,7 +20,9 @@ public sealed class GrpcSidecarAdapter : IFrameworkAdapter, IDisposable
     private bool _disposed;
 
     public FrameworkType FrameworkType => FrameworkType.PythonGrpc;
-    public IReadOnlyList<string> SupportedModels => ["TFT", "NeuralOde"];
+    // "TftPinn" is routed to _train_tft_pinn in the sidecar (G5 wiring).
+    // "TFT" + hyperparameters[use_tft_pinn]=true is equivalent (server-side dispatch).
+    public IReadOnlyList<string> SupportedModels => ["TFT", "TftPinn", "NeuralOde"];
 
     public GrpcSidecarAdapter(string address, string? tempDir = null)
     {

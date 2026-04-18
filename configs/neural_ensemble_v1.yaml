@@ -27,6 +27,10 @@
 name: neural_ensemble_v1
 
 data_sources:
+  # NOTE: sequence Parquet is loaded on the Python sidecar side using the
+  # `sequences_path` hyperparameter (see stage below) and re-used by the
+  # OnnxAdapter at inference time. It is deliberately not a declared
+  # data_source because the C# frame-loader layer flattens long-form sequences.
   training_features:
     provider: sqlite
     connection_string: "Data Source=data/data/staging/staging.db"
@@ -34,16 +38,6 @@ data_sources:
       table: training_features
       filter: "split IS NOT NULL AND exclude = 0"
       # sentinel conversion: 9999.9 and -1e31 -> NaN at load time (RULE-204)
-
-  omni_sequences:
-    provider: parquet
-    # Built by: python3.12 scripts/build_pinn_sequences.py
-    # Shape: (N_events, 222, 20) — 222 timesteps, 20 OMNI channels
-    # Channel names defined in python/feature_schema.py::SEQUENCE_CHANNELS
-    connection_string: "data/sequences"
-    options:
-      train_file: train_sequences.parquet
-      holdout_file: holdout_sequences.parquet
 
 stages:
   # ---------------------------------------------------------------------------
@@ -53,7 +47,6 @@ stages:
     framework: python_grpc
     model_type: TftPinn
     data_source: training_features
-    sequence_source: omni_sequences
 
     # Flat feature columns — all 105 from feature_schema.FLAT_COLS
     # Phantom cols (dimming_area, dimming_asymmetry, eit_wave_speed_kms,
@@ -222,52 +215,154 @@ stages:
       n_ref_cm3: 5.0             # reference proton density for gamma_eff scaling
 
       # --- Feature flag: use TFT+PINN vs old LSTM stub ---
-      use_tft_pinn: true        # set false to fall back to _SimpleTftModel
+      use_tft_pinn: "true"      # sidecar reads string "true"/"false" (see _dispatch_train)
+
+      # --- Sequence Parquet path (RULE-213 compatible, SuperMAG expansion hook) ---
+      # Sidecar reads `{sequences_path}/{split}_sequences.parquet` per event and
+      # joins on activity_id to reconstruct the (B, 222, 20) tensor.
+      sequences_path: "data/sequences"
+      split: "train"            # used for the training pass; predict stage overrides to "holdout"
+      timeout_minutes: 90       # TFT+PINN on CPU needs more than the default 30 min (RULE-151)
 
   # ---------------------------------------------------------------------------
-  # Stage 2: ONNX inference (wired after G5 export)
+  # Stage 2: ONNX inference (G6 round-trip)
   # ---------------------------------------------------------------------------
-  # tft_pinn_inference:
-  #   framework: onnx
-  #   model_type: NeuralEnsemble
-  #   data_source: training_features
-  #   sequence_source: omni_sequences
-  #   # Populated after G5 ONNX export and registry entry
-  #   model_artifact: neural_ensemble_v1/tft_pinn_encoder
-  #   # Named inputs (must match ExportOnnx output):
-  #   #   x_flat (float32, [B, 105])
-  #   #   m_flat (float32, [B, 105])
-  #   #   x_seq  (float32, [B, 222, 20])
-  #   #   m_seq  (float32, [B, 222, 20])
-  #   # Named outputs: p10, p50, p90 (float32, [B, 1] each)
+  # After Stage 1 completes the sidecar writes `{stage}/model.pt` + meta.json.
+  # The host then calls ExportOnnx (opset ≤ 20) to produce the named-I/O graph:
+  #   inputs : x_flat (B, 105), m_flat (B, 105), x_seq (B, 222, 20), m_seq (B, 222, 20)
+  #   outputs: p10 (B, 1), p50 (B, 1), p90 (B, 1)
+  # OnnxAdapter.TftPinn mode loads this graph and reconstructs x_seq/m_seq by
+  # reading {sequences_path}/{split}_sequences.parquet keyed on activity_id.
+  tft_pinn_inference:
+    framework: onnx
+    model_type: TftPinn
+    data_source: training_features
+    features:
+      # Same 105 flat columns as Stage 1 — OnnxAdapter builds x_flat/m_flat
+      # from these columns; m_flat is derived from NaN presence automatically.
+      - cme_speed_kms
+      - cme_half_angle_deg
+      - cme_latitude
+      - cme_longitude
+      - cme_mass_grams
+      - cme_angular_width_deg
+      - cme_tilt_angle_deg
+      - cdaw_linear_speed_kms
+      - cdaw_angular_width_deg
+      - cdaw_mass_log10
+      - cdaw_ke_log10
+      - cdaw_matched
+      - cdaw_mass_quality
+      - second_order_speed_init
+      - second_order_speed_final
+      - second_order_speed_20Rs
+      - accel_kms2
+      - mpa_deg
+      - usflux
+      - meangam
+      - meangbt
+      - meangbz
+      - meangbh
+      - meanjzd
+      - totusjz
+      - meanjzh
+      - totusjh
+      - absnjzh
+      - meanalp
+      - savncpp
+      - meanpot
+      - totpot
+      - meanshr
+      - shrgt45
+      - r_value
+      - area_acr
+      - sharp_available
+      - sw_speed_ambient
+      - sw_density_ambient
+      - sw_bt_ambient
+      - sw_bz_ambient
+      - delta_v_kms
+      - omni_24h_bz_mean
+      - omni_24h_bz_std
+      - omni_24h_bz_min
+      - omni_24h_speed_mean
+      - omni_24h_density_mean
+      - omni_24h_pressure_mean
+      - omni_24h_ae_max
+      - omni_24h_dst_min
+      - omni_24h_kp_max
+      - omni_48h_density_spike_max
+      - omni_48h_speed_gradient
+      - omni_150h_density_median
+      - omni_150h_speed_median
+      - f10_7
+      - sunspot_number
+      - dst_min_nt
+      - kp_max
+      - storm_threshold_met
+      - flare_class_numeric
+      - has_flare
+      - flare_source_longitude
+      - goes_peak_flux_wm2
+      - hcs_tilt_angle
+      - hcs_distance
+      - hcs_tilt_classic_deg
+      - hcs_tilt_radial_deg
+      - has_type2_burst
+      - type2_start_freq_mhz
+      - type2_end_freq_mhz
+      - enlil_predicted_arrival_hours
+      - enlil_au
+      - enlil_matched
+      - preceding_cme_count_48h
+      - preceding_cme_speed_max
+      - preceding_cme_speed_mean
+      - preceding_cme_angular_sep_min
+      - is_multi_cme
+      - cluster_id_k5
+      - cluster_id_k8
+      - cluster_id_k12
+      - cluster_id_dbscan
+      - cluster_assigned
+      - rc_icme_type
+      - rc_bde_flag
+      - rc_v_icme
+      - rc_b_max
+      - rc_matched
+      - has_coronal_dimming
+      - has_eit_wave
+      - has_filament_eruption
+      - has_sigmoid
+      - has_sep
+      - sep_onset_delay_hours
+      - pfss_field_type
+      - pfss_open_fraction_10deg
+      - pfss_ch_distance_deg
+      - pfss_polarity
+      - has_mpc
+      - mpc_delay_hours
+      - stereo_available
+      - stereo_speed_ambient
+      - stereo_density_ambient
+      - stereo_lead_hours
+    target: transit_time_hours
+    hyperparameters:
+      # `model_path` is populated after the sidecar ExportOnnx call (G6 wiring).
+      # Keep as a relative path under SOLARPIPE_REGISTRY for portability.
+      model_path: "models/tft_pinn_943e0a87/model.onnx"
+      sequences_path: "data/sequences"
+      split: "holdout"          # inference runs against the 90-event holdout
 
+# Evaluation: YamlDotNet schema accepts `strategy` + `gap_days` only.
+# Rich quality-gate / metrics spec is deferred to G7 (see NEURAL_ENSEMBLE_PLAN §G7).
+# Desired G7 policy (not yet enforced by schema):
+#   method: temporal_cv, n_folds: 5, calibration_fold: last (RULE-164)
+#   metrics: [mae, rmse, bias, pinball_p10/50/90, quantile_coverage]
+#   quality_gate: { metric: mae, split: holdout, threshold: 6.0, on_failure: abort }
 evaluation:
-  method: temporal_cv
-  n_folds: 5
-  gap_days: 5                    # temporal gap buffer (RULE-051)
-  calibration_fold: last         # last fold is calibration-only (RULE-164)
-  metrics:
-    - mae                        # primary: CME transit time MAE (hours)
-    - rmse
-    - bias
-    - pinball_p10
-    - pinball_p50
-    - pinball_p90
-    - quantile_coverage          # fraction of events where true in [P10, P90]
-
-  # G7 quality gate: holdout MAE must be <= 6.0h before P6 ensemble head
-  quality_gate:
-    metric: mae
-    split: holdout
-    threshold: 6.0
-    on_failure: abort            # do not advance to P6 if gate fails
-
-checkpointing:
-  # Hypothesis-scoped per RULE-162
-  path_template: "{SOLARPIPE_CACHE}/sweeps/neural_ensemble_v1/{stage_name}/"
-  resume_on_restart: true
+  strategy: expanding_window
+  gap_days: 5                    # RULE-051 temporal gap buffer
 
 output:
-  predictions_path: "output/neural_ensemble_v1/"
-  log_metrics: true
-  export_onnx_on_completion: false   # set true after G5 wiring complete
+  format: json
+  path: "output/neural_ensemble_v1/"

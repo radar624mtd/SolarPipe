@@ -106,7 +106,10 @@ public sealed class TrainCommand : ICommand
 
                 ITrainedModel model;
                 using var stageCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-                stageCts.CancelAfter(TimeSpan.FromMinutes(30)); // RULE-151
+                int timeoutMinutes = stageConfig.Hyperparameters is not null
+                    && stageConfig.Hyperparameters.TryGetValue("timeout_minutes", out var tmObj)
+                    && int.TryParse(tmObj?.ToString(), out var tm) ? tm : 30;
+                stageCts.CancelAfter(TimeSpan.FromMinutes(timeoutMinutes)); // RULE-151
 
                 // If this stage uses residual_calibration, find the preceding physics model,
                 // run it on the training data, compute residuals, and train on those residuals.
@@ -289,8 +292,10 @@ public sealed class TrainCommand : ICommand
 
     private IFrameworkAdapter ResolveAdapter(StageConfig config)
     {
+        // Normalize: strip underscores so YAML "python_grpc" matches enum "PythonGrpc".
+        static string Normalize(string s) => s.Replace("_", "", StringComparison.Ordinal);
         var adapter = _adapters.FirstOrDefault(a =>
-            string.Equals(a.FrameworkType.ToString(), config.Framework, StringComparison.OrdinalIgnoreCase));
+            string.Equals(Normalize(a.FrameworkType.ToString()), Normalize(config.Framework), StringComparison.OrdinalIgnoreCase));
 
         if (adapter is null)
             throw new InvalidOperationException(
@@ -320,12 +325,25 @@ public sealed class TrainCommand : ICommand
 
         static string Q(string c) => $"\"{c.Replace("\"", "")}\"";
 
-        var cols = stage.Features
-            .Append(stage.Target)
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .Select(f => ExpandFeatureToSql(f, Q));
+        // TftPinn stages need activity_id for sequence Parquet join in the sidecar.
+        // Prepend it so it's always the first extra column (not counted as a model feature).
+        IEnumerable<string> extraCols = stage.ModelType.Equals("TftPinn", StringComparison.OrdinalIgnoreCase)
+            ? new[] { Q("activity_id") }
+            : Enumerable.Empty<string>();
 
-        return $"SELECT {string.Join(", ", cols)} FROM {Q(table)}";
+        var cols = extraCols.Concat(
+            stage.Features
+                .Append(stage.Target)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Select(f => ExpandFeatureToSql(f, Q)));
+
+        string whereClause = dsOptions is not null
+            && dsOptions.TryGetValue("filter", out var f)
+            && !string.IsNullOrWhiteSpace(f)
+            ? $" WHERE {f}"
+            : string.Empty;
+
+        return $"SELECT {string.Join(", ", cols)} FROM {Q(table)}{whereClause}";
     }
 
     private static string ExpandFeatureToSql(string feature, Func<string, string> quote)

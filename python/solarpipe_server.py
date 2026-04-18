@@ -64,6 +64,21 @@ if _TORCH_AVAILABLE:
     except ImportError as _tft_err:
         _tft_transit_err_msg = str(_tft_err)
 
+# Import TFT+PINN ensemble (G3/G4; requires PyTorch + feature_schema + tft_pinn_model)
+_TFT_PINN_AVAILABLE = False
+if _TORCH_AVAILABLE:
+    try:
+        from tft_pinn_model import build_tft_pinn_model  # noqa: E402
+        from physics_loss import build_pinn_loss  # noqa: E402
+        from feature_schema import (  # noqa: E402
+            FLAT_COLS as _PINN_FLAT_COLS,
+            N_SEQ_CHANNELS as _PINN_N_SEQ_CHANNELS,
+            SEQUENCE_CHANNELS as _PINN_SEQ_CHANNELS,
+        )
+        _TFT_PINN_AVAILABLE = True
+    except ImportError as _tft_pinn_err:
+        _tft_pinn_err_msg = str(_tft_pinn_err)
+
 # ─── Structured JSON logging to logs/python_latest.json (ADR-010) ────────────
 
 def _make_json_formatter() -> logging.Formatter:
@@ -684,6 +699,423 @@ def _export_neural_ode_onnx(model_id: str, model_output_dir: str, onnx_path: str
     logger.info("NeuralODE dynamics exported to ONNX: %s (opset=%d)", onnx_path, opset)
 
 
+# ─── TFT + PINN trainer / predictor / ONNX export (G3/G4/G5) ────────────────
+
+def _pinn_sequences_from_parquet(
+    sequences_path: str,
+    split: str,
+    activity_ids: list[str],
+) -> "tuple[torch.Tensor, torch.Tensor]":
+    """Load (x_seq, m_seq) pair for the TFT+PINN trainer.
+
+    Rebuilds the (N, T, C) float32 sequences from the Parquet file produced
+    by ``scripts/build_pinn_sequences.py``.  NaNs become 0.0 in x_seq with
+    mask 0.0 in m_seq, matching TrainingFeaturesDataset semantics.
+
+    Channels missing from the Parquet are padded with zeros and mask=0
+    (supports the RULE-213 SuperMAG expansion path without a code change).
+    """
+    import numpy as np
+    import pyarrow.parquet as pq
+
+    seq_file = Path(sequences_path) / f"{split}_sequences.parquet"
+    if not seq_file.exists():
+        raise FileNotFoundError(f"Sequence parquet not found: {seq_file}")
+
+    tbl = pq.read_table(str(seq_file))
+    aid_col      = tbl.column("activity_id").to_pylist()
+    window_col   = tbl.column("window").to_pylist()
+    timestep_col = tbl.column("timestep").to_pylist()
+
+    # Determine T from the pre_launch timestep range; build index map
+    pre_timesteps: list[int] = [
+        int(timestep_col[i]) for i in range(tbl.num_rows)
+        if window_col[i] == "pre_launch"
+    ]
+    if not pre_timesteps:
+        raise RuntimeError("No pre_launch rows in sequence parquet")
+    t_min, t_max = min(pre_timesteps), max(pre_timesteps)
+    T = t_max - t_min + 1
+    C = _PINN_N_SEQ_CHANNELS
+
+    aid_index: dict[str, int] = {aid: i for i, aid in enumerate(activity_ids)}
+    N = len(activity_ids)
+    x_np = np.zeros((N, T, C), dtype=np.float32)
+    m_np = np.zeros((N, T, C), dtype=np.float32)
+
+    schema_names = set(tbl.schema.names)
+    ch_arrays: dict[str, list] = {}
+    for ch in _PINN_SEQ_CHANNELS:
+        if ch in schema_names:
+            ch_arrays[ch] = tbl.column(ch).to_pylist()
+        else:
+            ch_arrays[ch] = None  # padded with zeros / mask 0
+
+    for row_i in range(tbl.num_rows):
+        if window_col[row_i] != "pre_launch":
+            continue
+        aid = aid_col[row_i]
+        if aid not in aid_index:
+            continue
+        n_idx = aid_index[aid]
+        t_idx = int(timestep_col[row_i]) - t_min
+        if t_idx < 0 or t_idx >= T:
+            continue
+        for c_idx, ch in enumerate(_PINN_SEQ_CHANNELS):
+            arr = ch_arrays[ch]
+            if arr is None:
+                continue
+            v = arr[row_i]
+            if v is None:
+                continue
+            fv = float(v)
+            if fv != fv:   # NaN check
+                continue
+            x_np[n_idx, t_idx, c_idx] = fv
+            m_np[n_idx, t_idx, c_idx] = 1.0
+
+    return torch.from_numpy(x_np), torch.from_numpy(m_np)
+
+
+def _flat_mask_tensors_from_arrow(
+    table: pa.Table,
+    feature_columns: list[str],
+) -> "tuple[torch.Tensor, torch.Tensor]":
+    """Project Arrow table to (x_flat, m_flat) float32 tensors.
+
+    NaN / Arrow null -> x_flat=0.0, m_flat=0.0; observed -> m_flat=1.0.
+    Columns must match feature_schema.FLAT_COLS order on the caller side.
+    """
+    import math
+    import numpy as np
+
+    N = table.num_rows
+    C = len(feature_columns)
+    x_np = np.zeros((N, C), dtype=np.float32)
+    m_np = np.zeros((N, C), dtype=np.float32)
+    for j, col in enumerate(feature_columns):
+        vals = table.column(col).to_pylist()
+        for i, v in enumerate(vals):
+            if v is None:
+                continue
+            fv = float(v)
+            if math.isnan(fv):
+                continue
+            x_np[i, j] = fv
+            m_np[i, j] = 1.0
+    return torch.from_numpy(x_np), torch.from_numpy(m_np)
+
+
+def _train_tft_pinn(
+    table: pa.Table,
+    feature_columns: list[str],
+    target_column: str,
+    hyperparameters: dict[str, str],
+    model_output_dir: str,
+    progress_cb,
+    ct_event: threading.Event,
+) -> str:
+    """Train the TFT+PINN two-headed ensemble (G3 model, G4 loss).
+
+    Required hyperparameters:
+        sequences_path:  dir containing {train,holdout}_sequences.parquet
+        activity_ids:    comma-separated list in same order as Arrow rows
+                         (caller-supplied; falls back to table[activity_id])
+
+    All model + loss hyperparameters are YAML keys consumed by
+    build_tft_pinn_model() and build_pinn_loss().
+    """
+    if not _TORCH_AVAILABLE or not _TFT_PINN_AVAILABLE:
+        logger.warning("TFT+PINN unavailable -- stub train")
+        return _stub_train(table, "TFT_PINN", model_output_dir)
+
+    # Check expected feature column order matches feature_schema
+    if list(feature_columns) != list(_PINN_FLAT_COLS):
+        raise ValueError(
+            f"TFT+PINN feature_columns must match feature_schema.FLAT_COLS "
+            f"(got {len(feature_columns)} cols, expected {len(_PINN_FLAT_COLS)}; "
+            f"first diff at index "
+            f"{next((i for i, (a, b) in enumerate(zip(feature_columns, _PINN_FLAT_COLS)) if a != b), 'n/a')})"
+        )
+
+    sequences_path = hyperparameters.get("sequences_path", "data/sequences")
+    split = hyperparameters.get("split", "train")
+    epochs = int(hyperparameters.get("max_epochs", hyperparameters.get("epochs", "10")))
+    lr = float(hyperparameters.get("learning_rate", "1e-3"))
+    batch_size = int(hyperparameters.get("batch_size", "64"))
+    grad_clip = float(hyperparameters.get("gradient_clip_norm", "1.0"))
+    seed = int(hyperparameters.get("seed", "42"))
+
+    torch.manual_seed(seed)
+
+    # ---- Build x_flat / m_flat / y from Arrow table ------------------------
+    import math
+    x_flat, m_flat = _flat_mask_tensors_from_arrow(table, feature_columns)
+
+    tgt_raw = table.column(target_column).to_pylist()
+    y_list = [float("nan") if v is None else float(v) for v in tgt_raw]
+    valid_idx = [i for i, v in enumerate(y_list) if not math.isnan(v)]
+    if not valid_idx:
+        raise ValueError("TFT+PINN trainer: all targets NaN")
+    y = torch.tensor([y_list[i] for i in valid_idx], dtype=torch.float32).unsqueeze(1)
+    x_flat = x_flat[valid_idx]
+    m_flat = m_flat[valid_idx]
+
+    # ---- Load sequences from Parquet ---------------------------------------
+    aid_col = [str(v) for v in table.column("activity_id").to_pylist()] \
+        if "activity_id" in table.schema.names else []
+    if aid_col:
+        aids = [aid_col[i] for i in valid_idx]
+    else:
+        raise ValueError("TFT+PINN trainer: Arrow table must include activity_id column")
+
+    x_seq, m_seq = _pinn_sequences_from_parquet(sequences_path, split, aids)
+
+    # Drop rows where the sequence is fully unobserved (no info at all)
+    seq_obs = m_seq.sum(dim=(1, 2)) > 0
+    if not seq_obs.all():
+        keep = seq_obs.nonzero(as_tuple=True)[0]
+        x_flat = x_flat[keep]
+        m_flat = m_flat[keep]
+        x_seq  = x_seq[keep]
+        m_seq  = m_seq[keep]
+        y      = y[keep]
+
+    N = y.size(0)
+    if N == 0:
+        raise ValueError("TFT+PINN trainer: no rows after sequence obs filter")
+
+    # Ambient wind + initial speed — extract from RAW x_flat before normalization
+    cme_speed_idx = _PINN_FLAT_COLS.index("cme_speed_kms")
+    sw_speed_idx  = _PINN_FLAT_COLS.index("sw_speed_ambient")
+    v0   = torch.where(m_flat[:, cme_speed_idx] > 0,
+                       x_flat[:, cme_speed_idx],
+                       torch.full((N,), 500.0))
+    v_sw = torch.where(m_flat[:, sw_speed_idx] > 0,
+                       x_flat[:, sw_speed_idx],
+                       torch.full((N,), 400.0))
+
+    # ---- Standardize x_flat (per-column z-score on observed values) ---------
+    # Raw physical columns span 24 orders of magnitude — unnormalized input
+    # causes gradient explosion and NaN weights within a few epochs.
+    feat_mean = torch.zeros(x_flat.shape[1])
+    feat_std  = torch.ones(x_flat.shape[1])
+    for j in range(x_flat.shape[1]):
+        obs_vals = x_flat[m_flat[:, j] > 0, j]
+        if obs_vals.numel() > 1:
+            feat_mean[j] = obs_vals.mean()
+            s = obs_vals.std()
+            feat_std[j] = s if s > 1e-8 else 1.0
+    x_flat = (x_flat - feat_mean) / feat_std
+
+    # ---- Model + loss ------------------------------------------------------
+    model = build_tft_pinn_model(hyperparameters)
+    loss_fn = build_pinn_loss(hyperparameters)
+    opt = torch.optim.Adam(model.parameters(), lr=lr)
+
+    split_n = max(1, int(0.8 * N))
+    rng = torch.Generator().manual_seed(seed)
+    perm = torch.randperm(N, generator=rng)
+    idx_train = perm[:split_n]
+    idx_val   = perm[split_n:]
+
+    n_batches = max(1, (len(idx_train) + batch_size - 1) // batch_size)
+
+    for epoch in range(1, epochs + 1):
+        if ct_event.is_set():
+            logger.info("TFT+PINN training cancelled at epoch %d", epoch)
+            break
+
+        model.train()
+        epoch_losses = []
+        batch_perm = idx_train[torch.randperm(len(idx_train), generator=rng)]
+        for b in range(n_batches):
+            bi = batch_perm[b * batch_size : (b + 1) * batch_size]
+            if len(bi) == 0:
+                continue
+            opt.zero_grad()
+            preds = model(x_flat[bi], m_flat[bi], x_seq[bi], m_seq[bi])
+            loss_d = loss_fn(preds, y[bi], v0[bi], v_sw[bi], x_seq[bi], m_seq[bi])
+            loss_val = loss_d["total"]
+            if not torch.isfinite(loss_val):
+                logger.warning("NaN/Inf loss at epoch %d batch %d — skipping step", epoch, b)
+                continue
+            loss_val.backward()
+            if grad_clip > 0.0:
+                torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
+            opt.step()
+            epoch_losses.append(float(loss_val.detach()))
+
+        train_loss = sum(epoch_losses) / max(1, len(epoch_losses))
+
+        model.eval()
+        with torch.no_grad():
+            if len(idx_val) > 0:
+                v_preds = model(
+                    x_flat[idx_val], m_flat[idx_val],
+                    x_seq[idx_val], m_seq[idx_val],
+                )
+                v_loss_d = loss_fn(
+                    v_preds, y[idx_val], v0[idx_val], v_sw[idx_val],
+                    x_seq[idx_val], m_seq[idx_val],
+                )
+                val_loss = float(v_loss_d["total"])
+            else:
+                val_loss = train_loss
+
+        progress_cb(epoch, train_loss, val_loss)
+
+    # ---- Save artifact -----------------------------------------------------
+    import uuid
+    model_id = f"tft_pinn_{uuid.uuid4().hex[:8]}"
+    out_dir = Path(model_output_dir) / model_id
+    out_dir.mkdir(parents=True, exist_ok=True)
+    torch.save(model.state_dict(), str(out_dir / "model.pt"))
+    (out_dir / "meta.json").write_text(json.dumps({
+        "model_type":            "TFT_PINN",
+        "n_flat":                len(_PINN_FLAT_COLS),
+        "n_seq_channels":        _PINN_N_SEQ_CHANNELS,
+        "n_seq_timesteps":       int(x_seq.shape[1]),
+        "flat_hidden_dim":       int(hyperparameters.get("flat_hidden_dim", 256)),
+        "flat_n_residual_blocks": int(hyperparameters.get("flat_n_residual_blocks", 2)),
+        "null_embedding_dim":    int(hyperparameters.get("null_embedding_dim", 16)),
+        "seq_hidden_dim":        int(hyperparameters.get("seq_hidden_dim", 128)),
+        "seq_n_heads":           int(hyperparameters.get("seq_n_heads", 4)),
+        "seq_n_layers":          int(hyperparameters.get("seq_n_layers", 2)),
+        "seq_dropout":           float(hyperparameters.get("seq_dropout", 0.1)),
+        "epochs":                epochs,
+        "feat_mean":             feat_mean.tolist(),
+        "feat_std":              feat_std.tolist(),
+    }))
+    logger.info("TFT+PINN model saved: %s (epochs=%d, N=%d)", model_id, epochs, N)
+    return model_id
+
+
+def _predict_tft_pinn(model_id: str, model_output_dir: str, table: pa.Table) -> pa.Table:
+    """Run inference for TFT+PINN; returns Arrow table with P50 prediction."""
+    if not _TORCH_AVAILABLE or not _TFT_PINN_AVAILABLE:
+        values = pa.array([48.0] * table.num_rows, type=pa.float32())
+        return pa.table({"prediction": values}, schema=PREDICTION_SCHEMA)
+
+    meta_path = Path(model_output_dir) / model_id / "meta.json"
+    meta = json.loads(meta_path.read_text())
+    model = build_tft_pinn_model({
+        "flat_hidden_dim":       meta["flat_hidden_dim"],
+        "flat_n_residual_blocks": meta["flat_n_residual_blocks"],
+        "null_embedding_dim":    meta["null_embedding_dim"],
+        "seq_hidden_dim":        meta["seq_hidden_dim"],
+        "seq_n_heads":           meta["seq_n_heads"],
+        "seq_n_layers":          meta["seq_n_layers"],
+        "seq_dropout":           meta["seq_dropout"],
+    })
+    weights = Path(model_output_dir) / model_id / "model.pt"
+    model.load_state_dict(torch.load(str(weights), map_location="cpu", weights_only=True))
+    model.eval()
+
+    # Build x_flat / m_flat from Arrow; apply training-time standardization
+    x_flat, m_flat = _flat_mask_tensors_from_arrow(table, list(_PINN_FLAT_COLS))
+    if "feat_mean" in meta and "feat_std" in meta:
+        feat_mean = torch.tensor(meta["feat_mean"], dtype=torch.float32)
+        feat_std  = torch.tensor(meta["feat_std"],  dtype=torch.float32)
+        x_flat = (x_flat - feat_mean) / feat_std
+    aids = [str(v) for v in table.column("activity_id").to_pylist()]
+    seq_path_col = "prediction_sequences_path"
+    if seq_path_col in table.schema.names:
+        seq_path = str(table.column(seq_path_col)[0].as_py())
+    else:
+        seq_path = "data/sequences"
+    split = "holdout"
+    if "split" in table.schema.names:
+        split = str(table.column("split")[0].as_py())
+    x_seq, m_seq = _pinn_sequences_from_parquet(seq_path, split, aids)
+
+    with torch.no_grad():
+        out = model(x_flat, m_flat, x_seq, m_seq)  # (B, 3)
+    p50 = out[:, 1].tolist()
+    values = pa.array(p50, type=pa.float32())
+    return pa.table({"prediction": values}, schema=PREDICTION_SCHEMA)
+
+
+def _export_tft_pinn_onnx(
+    model_id: str, model_output_dir: str, onnx_path: str, opset: int
+) -> None:
+    """Export the TFT+PINN model to ONNX (opset <= 20).
+
+    Named inputs:  x_flat (B, N_FLAT), m_flat (B, N_FLAT),
+                   x_seq (B, T, C_SEQ), m_seq (B, T, C_SEQ)
+    Named outputs: p10 (B, 1), p50 (B, 1), p90 (B, 1)
+    Batch axis is dynamic; T and channel counts are fixed from the trained meta.
+    """
+    if not _TORCH_AVAILABLE or not _TFT_PINN_AVAILABLE:
+        Path(onnx_path).parent.mkdir(parents=True, exist_ok=True)
+        Path(onnx_path).write_bytes(b"\x00" * 8)
+        return
+
+    meta_path = Path(model_output_dir) / model_id / "meta.json"
+    if not meta_path.exists():
+        raise FileNotFoundError(f"TFT+PINN meta not found: {meta_path}")
+
+    meta = json.loads(meta_path.read_text())
+    model = build_tft_pinn_model({
+        "flat_hidden_dim":       meta["flat_hidden_dim"],
+        "flat_n_residual_blocks": meta["flat_n_residual_blocks"],
+        "null_embedding_dim":    meta["null_embedding_dim"],
+        "seq_hidden_dim":        meta["seq_hidden_dim"],
+        "seq_n_heads":           meta["seq_n_heads"],
+        "seq_n_layers":          meta["seq_n_layers"],
+        "seq_dropout":           meta["seq_dropout"],
+    })
+
+    weights = Path(model_output_dir) / model_id / "model.pt"
+    model.load_state_dict(torch.load(str(weights), map_location="cpu", weights_only=True))
+    model.eval()
+
+    n_flat = int(meta["n_flat"])
+    T_seq  = int(meta["n_seq_timesteps"])
+    C_seq  = int(meta["n_seq_channels"])
+
+    # Split the 3-way output into three (B, 1) tensors for named outputs
+    class _OnnxWrapper(nn.Module):
+        def __init__(self, inner: nn.Module) -> None:
+            super().__init__()
+            self.inner = inner
+
+        def forward(self, x_flat, m_flat, x_seq, m_seq):
+            preds = self.inner(x_flat, m_flat, x_seq, m_seq)  # (B, 3)
+            return preds[:, 0:1], preds[:, 1:2], preds[:, 2:3]
+
+    wrapper = _OnnxWrapper(model)
+    wrapper.eval()
+
+    dummy_x_flat = torch.zeros(1, n_flat, dtype=torch.float32)
+    dummy_m_flat = torch.ones(1,  n_flat, dtype=torch.float32)
+    dummy_x_seq  = torch.zeros(1, T_seq, C_seq, dtype=torch.float32)
+    dummy_m_seq  = torch.ones(1,  T_seq, C_seq, dtype=torch.float32)
+
+    Path(onnx_path).parent.mkdir(parents=True, exist_ok=True)
+    torch.onnx.export(
+        wrapper,
+        (dummy_x_flat, dummy_m_flat, dummy_x_seq, dummy_m_seq),
+        onnx_path,
+        opset_version=min(opset if opset > 0 else 20, 20),
+        input_names=["x_flat", "m_flat", "x_seq", "m_seq"],
+        output_names=["p10", "p50", "p90"],
+        dynamic_axes={
+            "x_flat": {0: "batch"},
+            "m_flat": {0: "batch"},
+            "x_seq":  {0: "batch"},
+            "m_seq":  {0: "batch"},
+            "p10":    {0: "batch"},
+            "p50":    {0: "batch"},
+            "p90":    {0: "batch"},
+        },
+    )
+    logger.info(
+        "TFT+PINN exported to ONNX: %s (opset=%d, n_flat=%d, T=%d, C=%d)",
+        onnx_path, min(opset if opset > 0 else 20, 20), n_flat, T_seq, C_seq,
+    )
+
+
 def _stub_train(table: pa.Table, model_type: str, model_output_dir: str) -> str:
     """Deterministic stub when PyTorch is unavailable."""
     import uuid
@@ -713,6 +1145,10 @@ def _predict(model_id: str, model_output_dir: str, table: pa.Table) -> pa.Table:
         if not _TFT_TRANSIT_AVAILABLE:
             raise RuntimeError("TFT_TRANSIT model requires tft_model.py and PyTorch")
         return _predict_tft_transit(model_id, model_output_dir, table)
+    elif meta["model_type"] == "TFT_PINN":
+        if not _TFT_PINN_AVAILABLE:
+            raise RuntimeError("TFT_PINN model requires tft_pinn_model.py and PyTorch")
+        return _predict_tft_pinn(model_id, model_output_dir, table)
     elif meta["model_type"] == "TFT":
         # Use stored input_size (not table.num_columns) — prediction frame may include target col.
         import math
@@ -788,6 +1224,14 @@ class _PythonTrainerServicer(solarpipe_pb2_grpc.PythonTrainerServicer if _GRPC_A
         hyperparams = dict(request.hyperparameters)
         model_type = request.model_type.strip()
 
+        # TFT+PINN routing: model_type=="TftPinn" OR (TFT + use_tft_pinn=true flag)
+        use_tft_pinn = str(hyperparams.get("use_tft_pinn", "false")).strip().lower() == "true"
+        if model_type.upper() in ("TFTPINN", "TFT_PINN") or (
+            model_type.upper() == "TFT" and use_tft_pinn
+        ):
+            return _train_tft_pinn(table, features, request.target_column,
+                                   hyperparams, self._model_dir, progress_cb, ct_event)
+
         if model_type.upper() == "TFT_TRANSIT":
             return _train_tft_transit(table, features, request.target_column,
                                       hyperparams, self._model_dir, progress_cb, ct_event)
@@ -799,7 +1243,8 @@ class _PythonTrainerServicer(solarpipe_pb2_grpc.PythonTrainerServicer if _GRPC_A
                                      hyperparams, self._model_dir, progress_cb, ct_event)
         else:
             raise ValueError(
-                f"Unsupported model_type {model_type!r}. Supported: TFT, NeuralOde."
+                f"Unsupported model_type {model_type!r}. "
+                f"Supported: TFT, TftPinn, NeuralOde."
             )
 
     def StreamTrain(self, request, context):  # type: ignore[override]
@@ -901,10 +1346,26 @@ class _PythonTrainerServicer(solarpipe_pb2_grpc.PythonTrainerServicer if _GRPC_A
     def ExportOnnx(self, request, context):  # type: ignore[override]
         logger.info("ExportOnnx: model_id=%s opset=%d", request.model_id, request.opset)
         try:
-            _export_neural_ode_onnx(
-                request.model_id, self._model_dir,
-                request.onnx_output_path, request.opset,
-            )
+            meta_path = Path(self._model_dir) / request.model_id / "meta.json"
+            if not meta_path.exists():
+                raise FileNotFoundError(f"Model not found: {request.model_id!r}")
+            meta = json.loads(meta_path.read_text())
+            mt = str(meta.get("model_type", "")).upper()
+            if mt == "TFT_PINN":
+                _export_tft_pinn_onnx(
+                    request.model_id, self._model_dir,
+                    request.onnx_output_path, request.opset,
+                )
+            elif mt in ("NEURALODE", "NEURAL_ODE"):
+                _export_neural_ode_onnx(
+                    request.model_id, self._model_dir,
+                    request.onnx_output_path, request.opset,
+                )
+            else:
+                raise ValueError(
+                    f"ExportOnnx: model_type {mt!r} not supported for ONNX export. "
+                    f"Supported: TFT_PINN, NeuralOde."
+                )
             return solarpipe_pb2.ExportOnnxResponse(
                 onnx_output_path=request.onnx_output_path
             )
