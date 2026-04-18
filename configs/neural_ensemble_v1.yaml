@@ -349,9 +349,11 @@ stages:
     hyperparameters:
       # `model_path` is populated after the sidecar ExportOnnx call (G6 wiring).
       # Keep as a relative path under SOLARPIPE_REGISTRY for portability.
-      model_path: "models/tft_pinn_943e0a87/model.onnx"
+      # RULE-300: point at the MatMul-surgery variant, not raw model.onnx.
+      model_path: "models/baselines/g6_tft_pinn_943e0a87/model_matmul_reduce.onnx"
       sequences_path: "data/sequences"
       split: "holdout"          # inference runs against the 90-event holdout
+      use_cuda_ep: "true"       # RULE-300: CUDA EP via ORT; requires MatMul-surgery ONNX
 
 # Evaluation: YamlDotNet schema accepts `strategy` + `gap_days` only.
 # Rich quality-gate / metrics spec is deferred to G7 (see NEURAL_ENSEMBLE_PLAN §G7).

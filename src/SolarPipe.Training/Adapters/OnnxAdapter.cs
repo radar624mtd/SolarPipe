@@ -49,6 +49,17 @@ public sealed class OnnxAdapter : IFrameworkAdapter
         // Deterministic execution where possible
         options.ExecutionMode = ExecutionMode.ORT_SEQUENTIAL;
 
+        bool useCudaEp = string.Equals(
+            FindHyperString(config, "use_cuda_ep"), "true",
+            StringComparison.OrdinalIgnoreCase);
+        if (useCudaEp)
+        {
+            // RULE-300: must use MatMul-surgery ONNX (model_matmul_reduce.onnx).
+            // Raw torch.onnx.export output crashes on Maxwell sm_52 via cuDNN ReduceSum.
+            // OrtCudaProviderOptions defaults: device_id=0, arena=1, mem_limit=0 (unlimited).
+            options.AppendExecutionProvider_CUDA(0);
+        }
+
         var session = new InferenceSession(modelPath, options);
 
         var metrics = new ModelMetrics(double.NaN, double.NaN, double.NaN);
