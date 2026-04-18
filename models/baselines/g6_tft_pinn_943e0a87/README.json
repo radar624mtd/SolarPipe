@@ -1,0 +1,14 @@
+{
+  "baseline": "G6",
+  "model_id": "tft_pinn_943e0a87",
+  "commit": "184ec83",
+  "trained": "2026-04-18T00:00:40Z",
+  "epochs": 200,
+  "n_train_rows": 1579,
+  "holdout_mae_hours": 30.02,
+  "holdout_rmse_hours": 34.27,
+  "holdout_bias_hours": 17.69,
+  "p10_p90_coverage": 0.067,
+  "purpose": "G6 round-trip baseline — pre-tuning. Use as HPC optimization reference before G7 hyperparameter sweep.",
+  "notes": "First clean run post normalization-fix. SHARP columns (totpot=4.68e24) caused gradient explosion in prior runs without z-score. feat_mean/feat_std in meta.json. Physics losses disabled (lambda_ode=0, lambda_mono=0). batch_size=64, lr=1e-3, 200 epochs, grad_clip=1.0."
+}
