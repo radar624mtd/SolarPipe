@@ -25,9 +25,11 @@
 
 ## 1. Current Gate
 
-**→ G7 — Holdout quality gate** (G6 complete as of 2026-04-18, session 6)
+**→ G6.5 — HPC validation gate** (G6 reverted to ◐ on 2026-04-18 by red-team review)
 
-G6 round-trip confirmed: train (tft_pinn_943e0a87, 200 epochs, 1579 rows) → ExportOnnx (opset=17) → ONNX inference stage → holdout eval (90 events, MAE=30.02h). Round-trip structurally complete; MAE is pre-G7 baseline (underfitting — normalization fix applied this session; G7 hyperparameter tuning needed to reach ≤6h gate).
+G6 round-trip ran end-to-end (tft_pinn_943e0a87, 200 epochs, 1579 rows → ExportOnnx opset=17 → ONNX inference → 90 events, MAE=30.02h), but the HPC optimization plan it gates on (`docs/HPC_OPTIMIZATION_PLAN.md` + `docs/HPC_EXECUTION_MAPPING.md`) was not ratified. **Red-team review (`docs/HPC_REDTEAM_REVIEW_2026_04_18.md`) found 3 quantitative errors and 7 feasibility risks; G6 reverts to ◐ until items E1–E10 in §E of that review pass.** No G7 hyperparameter tuning may begin until then.
+
+**Read at session start:** [`docs/HPC_REDTEAM_REVIEW_2026_04_18.md`](HPC_REDTEAM_REVIEW_2026_04_18.md).
 
 ---
 
@@ -40,8 +42,9 @@ G6 round-trip confirmed: train (tft_pinn_943e0a87, 200 epochs, 1579 rows) → Ex
 | G3 | TFT + PINN model | ✅ complete | e55a7ce (2026-04-17) | Hand-rolled TFT-style transformer (pytorch-forecasting rejected — see §G3 rationale); 15/15 tests passing |
 | G4 | Physics loss | ✅ complete | 2748bbe (2026-04-17) | `python/physics_loss.py` + 30 unit tests (incl. FD-grad checks, C# unit parity); γ₀ unit bug fixed (cm⁻¹ → km⁻¹) |
 | G5 | ONNX export | ✅ complete | pending-commit (2026-04-17) | `_export_tft_pinn_onnx` + `_train_tft_pinn` + `_predict_tft_pinn` in solarpipe_server.py; `use_tft_pinn` flag wired; 7/7 parity tests (PyTorch↔ORT max|diff|≤1e-4) |
-| G6 | C# wiring + YAML | ✅ complete | 184ec83 (2026-04-18) | Round-trip confirmed: train→ExportOnnx→ONNX stage→holdout eval (90 events). Normalization fix + NaN guard added. |
-| G7 | Holdout quality gate | ◐ in progress | — | MAE=30.02h baseline (first run, underfitting). Need hyperparameter tuning to reach ≤6h. |
+| G6 | C# wiring + YAML | ◐ reverted 2026-04-18 | 184ec83 (round-trip), pending E1–E10 | Round-trip ran end-to-end; HPC plan red-teamed (`HPC_REDTEAM_REVIEW_2026_04_18.md`) — E1–E10 must pass before G6 closes. |
+| G6.5 | HPC validation | ☐ blocking | — | New gate inserted by red-team review. 10-item checklist in `HPC_REDTEAM_REVIEW_2026_04_18.md` §E. Blocks G7. |
+| G7 | Holdout quality gate | ☐ blocked on G6.5 | — | MAE=30.02h baseline (first run, underfitting). Hyperparameter tuning starts only after G6.5 passes. |
 
 Legend: ☐ not started · ◐ in progress · ✅ complete · ❌ failed/rolled back
 
@@ -163,9 +166,104 @@ Goal: full train → export → predict round-trip through the CLI.
 
 **Tests added (session 5):** 5 new G6 unit tests in `PythonSidecarAdapterTests.cs` — string Arrow type, Slice/SelectColumns propagation, TftPinn SupportedModels check. 381 unit tests total (was 376).
 
-### G7 — Holdout quality gate
+### G6.5 — HPC validation gate ☐ BLOCKING
+Goal: ratify the HPC optimization plan against measured baselines and empirical hardware tests **before** any G7 hyperparameter sweep is run. Inserted by `docs/HPC_REDTEAM_REVIEW_2026_04_18.md`.
+
+**Execution is ordered in four stages. Each stage has a validation gate that must pass before the next stage begins. Skipping ahead is forbidden — later items depend on earlier measurements.**
+
+Estimated total effort: ~3 days of focused work. Authoritative checklist also mirrored in `docs/HPC_REDTEAM_REVIEW_2026_04_18.md` §E.
+
+---
+
+#### Stage 1 — Hardware feasibility (load-bearing risks, ~½ day)
+
+Verify the toolchain actually runs on M4000 sm_52 **before** investing in baseline measurement. If either E6 or E7 fails, downstream stages re-plan around a different toolchain.
+
+- [x] **E6.** ✅ PASS (2026-04-18). PyTorch 2.5.1+cu121 executes on M4000 sm_52: device_capability=(5,2), 96–98% GPU util, finite loss, ~107 ms/iter fwd+bwd. PyTorch 2.6/2.7 dropped sm_52 — **pinned to 2.5.1+cu121** in `python/requirements.txt`. Evidence in `docs/HPC_STAGE1_HW_FEASIBILITY.md` §E6.
+  - Pin committed: `torch==2.5.1` in `python/requirements.txt`; `Microsoft.ML.OnnxRuntime.Gpu 1.20.1` in `Directory.Packages.props`.
+
+- [x] **E7.** ✅ PASS (2026-04-18) with MatMul graph surgery. ORT CUDA EP runs the **patched** TFT+PINN ONNX on M4000 at 25.3 ms / N=90 (6.56× over CPU EP 166.1 ms), parity ≤ 6.1e-05. **Unpatched ONNX crashes** with `CUDNN_STATUS_EXECUTION_FAILED_CUDART` on `seq_encoder/ReduceSum_1` across ORT 1.18.1, 1.20.1, 1.23.2. Einsum replacement also fails (same cuDNN path). Only working fix: replace 3 `seq_encoder` ReduceSum nodes with `MatMul(x, ones)` + `Squeeze`, which dispatches to cuBLAS GEMM.
+  - ⚠️ **RULE-300 (see `CLAUDE.md`):** every ONNX published for CUDA EP inference MUST have the MatMul surgery applied. Never publish raw `torch.onnx.export(...)` output. If a new reduce node appears in a future export, extend the surgery pass — otherwise ORT will crash at first inference.
+  - Working patched reference model: `models/baselines/g6_tft_pinn_943e0a87/model_matmul_reduce.onnx`.
+  - Canonical recipe in `docs/HPC_STAGE1_HW_FEASIBILITY.md` §E7 "Explicit MatMul surgery".
+  - Still TODO: bake surgery into `python/solarpipe_server.py` ExportOnnx helper; add `Microsoft.ML.OnnxRuntime.Gpu` to `Directory.Packages.props`; wire CUDA EP into C# `OnnxAdapter`.
+
+**Stage 1 validation gate — all must hold before Stage 2:**
+- [x] `torch.cuda.is_available() == True` and `get_device_capability(0) == (5, 2)` captured in `docs/HPC_STAGE1_HW_FEASIBILITY.md` §E6a.
+- [x] PyTorch forward+backward on `TftPinnModel` completes without kernel-not-found / NaN and shows >0 % GPU utilization (96–98%) — §E6b.
+- [x] ORT holdout inference runs on CUDA EP (GPU util >0 %), numerical parity ≤ 1e-4 vs CPU EP — §E7b revised: 25.3 ms, 6.1e-05 parity, with MatMul surgery.
+- [x] Working PT and ORT versions pinned: `torch==2.5.1` + `onnxruntime-gpu==1.20.1` in `python/requirements.txt`; `Microsoft.ML.OnnxRuntime.Gpu 1.20.1` in `Directory.Packages.props`.
+- [x] `docs/HPC_STAGE1_HW_FEASIBILITY.md` committed with evidence.
+
+If any sub-gate fails: **stop.** Open an issue in §5. Do not proceed to Stage 2 until the toolchain is proven. Possible fallbacks: downgrade PyTorch to 2.4, downgrade CUDA to 12.1, or accept CPU-only training (defer HPC plan entirely — G7 still unblocked, just slow).
+
+---
+
+#### Stage 2 — Baseline measurement (~1 day, depends on Stage 1)
+
+Only measurable once the GPU path is confirmed. Produces the single source of truth every downstream item compares against.
+
+- [ ] **E1.** `docs/HPC_BASELINE_MEASUREMENTS.md` committed with:
+  - End-to-end G6 round-trip wall clock (train + ExportOnnx + holdout predict), CPU path and GPU path side-by-side.
+  - Per-stage breakdown covering T1–T11 (C# side), P1–P9 (Python sidecar), I1–I6 (ONNX inference) from `HPC_OPTIMIZATION_PLAN.md` §2.
+  - `nvidia-smi dmon -s ucvmet -c <N>` capture spanning the training window on the GPU path.
+  - Measured counts for the boundary-events table in `HPC_EXECUTION_MAPPING.md` §6: count of managed-heap allocations (dotnet-counters or allocation profiler) and count of CUDA driver calls (Nsight Systems or equivalent).
+  - At least one re-run to establish noise floor (±X % per `memory/reference_hpc_gpu_optimization_playbook.md`).
+
+**Stage 2 validation gate — all must hold before Stage 3:**
+- [ ] All stage-level times sum to within 5 % of end-to-end wall clock (accounting is complete).
+- [ ] Baseline re-run within noise floor of first run (measurement is reproducible).
+- [ ] Boundary-events counts have a defined measurement method documented in the file (not just "I counted the calls in source").
+- [ ] File committed to git; commit hash referenced in this checkbox.
+
+---
+
+#### Stage 3 — Document corrections (~½ day, depends on Stage 2)
+
+Cheap now that numbers exist. Fixes the quantitative errors the red-team found.
+
+- [ ] **E2.** `HPC_EXECUTION_MAPPING.md` §1.4 corrected: param count ≈ 1.5 M (1.01 M FlatEncoder + 402 K SeqEncoder + 75 K Head), not 498 K. §1.5 Adam state sized from corrected params (≈ 12 MB not 4 MB). "Total GPU memory resident" rows in §1.7 recomputed for B=64 train and B=90 infer.
+- [ ] **E3.** `HPC_OPTIMIZATION_PLAN.md` §3 corrected: ≈ 130 TFLOPs total over 200 epochs (including backward). Phase 1 gate restated as **≤ 180 s at B≥256, ≤ 300 s at smaller B**. The "6 s pure compute" claim struck. Cite measured Stage 1 fwd+bwd time if available.
+- [ ] **E4.** `HPC_EXECUTION_MAPPING.md` §6 table rebuilt with two distinct columns: (a) managed-heap allocations and (b) CUDA driver calls + syscalls. Populate "before" column from Stage 2 E1 measurements, not derivations.
+- [ ] **E5.** f16 inference path struck from `HPC_EXECUTION_MAPPING.md` §1.4 "dtype (infer)" column **unless** Stage 1 E7 evidence shows ORT 1.18 f16 path is faster than f32 on sm_52 (unlikely — Maxwell has no native f16 ALU, red-team §B4). If struck, update §1.4 total infer-memory rows to use f32.
+
+**Stage 3 validation gate — all must hold before Stage 4:**
+- [ ] Every numeric claim in `HPC_EXECUTION_MAPPING.md` §1.4, §1.5, §1.7, §6 cross-referenced to either Stage 2 measurement or direct enumeration from `tft_pinn_model.py`.
+- [ ] Every Phase gate in `HPC_OPTIMIZATION_PLAN.md` §8 compatible with corrected FLOPs (no gate demands a wall time that violates measured Maxwell sustained throughput).
+- [ ] `git diff` on the two HPC docs reviewed; no stale numbers remain.
+
+---
+
+#### Stage 4 — Process + framing (~½ day, depends on Stage 3)
+
+No code. These are the durable rules future sessions will inherit.
+
+- [ ] **E8.** Action 1.2 (VIEW → Parquet snapshot) staleness check designed and documented in `HPC_EXECUTION_MAPPING.md` §3.1: snapshot filename embeds SHA256 of `(feature_vectors.row_count, pinn_expanded_flat.row_count, MAX(launch_time))`; training scripts validate hash before reading and rebuild if mismatch. Include the exact hash construction in the doc.
+- [ ] **E9.** "Parity gate" column added to `HPC_EXECUTION_MAPPING.md` §3 action ledger. For every action that rewrites an existing computation: name (a) the reference Python/SQL implementation, (b) the numerical tolerance (suggest 1e-5 for SIMD rewrites, 1e-4 for GPU kernels), (c) the test file path asserting parity. Actions that are novel (no rewrite) mark this column "N/A (novel)".
+- [ ] **E10.** Framing language corrected across `HPC_OPTIMIZATION_PLAN.md`, `HPC_EXECUTION_MAPPING.md`, and `CLAUDE.md`: replace any phrasing that implies HPC work improves MAE with "HPC plan unblocks G7 iteration speed; G7 quality (MAE ≤ 6h) depends on model architecture + Tier 2/3 features, not throughput." Already done in CLAUDE.md — verify both HPC docs match.
+
+**Stage 4 validation gate — all must hold to close G6.5:**
+- [ ] Staleness check (E8) has a written hash construction and a named validation function location.
+- [ ] Parity-gate column populated for every rewrite action in §3; novel actions explicitly marked N/A.
+- [ ] `grep`-level check: no doc says "HPC improves MAE" or equivalent; framing rule appears near the top of both HPC docs.
+
+---
+
+#### G6.5 closure
+
+When all four stage gates pass:
+1. Append a session-log entry to §4 with the closure commit hash listing all E-items and their satisfying commits.
+2. Update §2 gate board: G6 → ✅ complete, G6.5 → ✅ complete.
+3. Update §1 current gate to "G7 — Holdout quality gate".
+4. Sync `memory/reference_hpc_redteam_review.md` and `memory/project_neural_ensemble_plan.md` with closure status.
+5. **Only then** may G7 hyperparameter tuning begin.
+
+**Forbidden during G6.5:** running G7 hyperparameter sweeps, "preview" holdout runs to estimate tuning direction, or any multi-hour wall-clock training loop. The entire point of G6.5 is that the next wall-clock run is cheap.
+
+### G7 — Holdout quality gate ☐ BLOCKED on G6.5
 Goal: confirm Tier 1+2 baseline beats or matches PINN V1 before advancing to P6 ensemble head.
 
+- [ ] **G6.5 must be ✅ before this gate is touched.**
 - [ ] Holdout MAE logged, must be **≤ 6h**. (PINN V1 baseline: 8.69h.)
 - [ ] Quantile calibration check: holdout coverage for P10–P90 interval within [0.70, 0.90].
 - [ ] If MAE regressed: file an issue in §5, roll back to last green commit, do NOT advance to P6.
@@ -176,6 +274,37 @@ Goal: confirm Tier 1+2 baseline beats or matches PINN V1 before advancing to P6 
 ## 4. Session Log (append only — never delete)
 
 Every session that touches any gate must add an entry. One entry per session, in reverse-chronological order (newest at top).
+
+### 2026-04-18 — G6.5 Stage 1 gate closed; Stage 2 green-lit (session 8)
+- Agent: Claude Sonnet 4.6
+- Gate touched: G6.5 Stage 1 (all 5 gate items ✅).
+- Files changed:
+  - `python/requirements.txt` — comment corrected from "use CPU EP" to "MatMul-surgery ONNX runs on GPU EP at 6.56×"; toolchain pins unchanged (`torch==2.5.1`, `onnxruntime-gpu==1.20.1`).
+  - `Directory.Packages.props` — `Microsoft.ML.OnnxRuntime 1.18.0` → `Microsoft.ML.OnnxRuntime.Gpu 1.20.1` (with pin rationale comment).
+  - `src/SolarPipe.Training/SolarPipe.Training.csproj` — `OnnxRuntime` → `OnnxRuntime.Gpu`.
+  - `tests/SolarPipe.Tests.Unit/SolarPipe.Tests.Unit.csproj` — same switch.
+  - `tests/SolarPipe.Tests.Integration/SolarPipe.Tests.Integration.csproj` — same switch.
+  - `docs/NEURAL_ENSEMBLE_PLAN.md` — E6 ticked ✅, Stage 1 gate checkboxes all closed ✅.
+  - `docs/HPC_REDTEAM_REVIEW_2026_04_18.md` — Stage 1 toolchain-pin and HW_FEASIBILITY.md items marked complete.
+- Build: `dotnet restore` + `dotnet build --no-restore` clean — 0 warnings, 0 errors.
+- Stage 1 summary: E6 ✅ (PT 2.5.1+cu121, 96–98% GPU util, 107 ms/iter) + E7 ✅ (ORT GPU EP + MatMul surgery, 25.3 ms / N=90, 6.56×, parity 6.1e-05). All 5 Stage 1 gate items closed.
+- **Stage 2 is now unblocked:** produce `docs/HPC_BASELINE_MEASUREMENTS.md` with end-to-end G6 wall-clock breakdown (T1–T11, P1–P9, I1–I6), nvidia-smi dmon capture, and boundary-event counts.
+
+### 2026-04-18 — Red-team: G6 reverted; G6.5 (HPC validation) inserted (session 7)
+- Agent: Claude Opus 4.7
+- Gate touched: G6 (reverted ✅ → ◐), G6.5 (new gate inserted, ☐ blocking), G7 (☐ → ☐ blocked on G6.5).
+- Files added: `docs/HPC_REDTEAM_REVIEW_2026_04_18.md` (authoritative red-team review with §E E1–E10 ratification checklist).
+- Files changed: `docs/NEURAL_ENSEMBLE_PLAN.md` (§1 current gate, §2 board, new §G6.5 checklist, G7 marked blocked); `CLAUDE.md` (HPC pointer added, current gate restated).
+- Findings (full detail in red-team review):
+  - **B1** Param count off by 3× (claimed 498 K, actual 1.49 M) — propagates through Adam state, GPU resident memory, and inference param size.
+  - **B2** Per-epoch FLOPs off by ~10× (claimed 77 GFLOPs/epoch, actual ~660 GFLOPs); Phase 1 "≤ 120 s" gate is plausible but tight, not "trivially 6 s".
+  - **C1** PyTorch 2.7 wheels do not ship sm_52 PTX — Phase 0 must verify or downgrade.
+  - **C2** ORT 1.18 GPU on CUDA 12.6 + sm_52 is an untested combination; needs empirical confirmation it doesn't silently fall back to CPU.
+  - **C7** SeqEncoder host-conditional `clone()` (line 234) breaks CUDA Graph capture; Phase 2 graph gate cannot ship without model code change.
+  - **A1** No measured baseline yet; ratifying before Phase 0 inverts the PFSS playbook (correctness-before-timing).
+- Realistic perf estimate (D): G6 round-trip 18–20 min wall → optimized 90–240 s wall = **5–13× speedup**, not the implied 50×+. None of this changes MAE.
+- Action: G7 hyperparameter tuning blocked until E1–E10 are ticked with commit hashes. Future agents must read `HPC_REDTEAM_REVIEW_2026_04_18.md` at session start.
+- Memory: pointer added to `memory/MEMORY.md` linking the red-team review.
 
 ### 2026-04-18 — G6 complete; round-trip confirmed; normalization fix (session 6)
 - Agent: Claude Sonnet 4.6

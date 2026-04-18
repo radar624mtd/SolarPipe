@@ -9,7 +9,9 @@
     <PackageVersion Include="Microsoft.ML.FastTree"           Version="3.0.1" />
     <PackageVersion Include="Microsoft.ML.LightGbm"          Version="3.0.1" />
     <PackageVersion Include="Microsoft.Extensions.ML"        Version="3.0.1" />
-    <PackageVersion Include="Microsoft.ML.OnnxRuntime"       Version="1.18.0" />
+    <!-- PINNED: Gpu 1.20.1 ships CUDA 12 wheel; includes CPU EP fallback on machines without CUDA.
+         Maxwell (sm_52) requires MatMul surgery on exported ONNX — see CLAUDE.md RULE-300. -->
+    <PackageVersion Include="Microsoft.ML.OnnxRuntime.Gpu"  Version="1.20.1" />
     <PackageVersion Include="Microsoft.ML.OnnxTransformer"   Version="3.0.1" />
   </ItemGroup>
 
@@ -36,6 +38,9 @@
   <ItemGroup>
     <!-- Matrix operations only — NOT for ODE solving (see RULE-030, ADR-003) -->
     <PackageVersion Include="MathNet.Numerics" Version="5.0.0" />
+    <!-- GPU field-line tracing (CUDA → OpenCL → CPU fallback) -->
+    <PackageVersion Include="ILGPU"            Version="1.5.1" />
+    <PackageVersion Include="ILGPU.Algorithms" Version="1.5.1" />
   </ItemGroup>
 
   <!-- Observability -->

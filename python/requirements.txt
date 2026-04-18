@@ -7,5 +7,13 @@ grpcio==1.67.1
 grpcio-tools==1.67.1
 grpcio-health-checking==1.67.1
 pyarrow==17.0.0
+# PINNED: PyTorch 2.5.1+cu121 is the last wheel with sm_52 (Maxwell) PTX.
+# PyTorch 2.6+ dropped Maxwell — do not upgrade without verifying sm_52 support.
 torch==2.5.1
+# PINNED: onnxruntime-gpu 1.20.1 ships CUDA 12 wheel (compatible with CUDA 12.1).
+# ORT CUDA EP runs the MatMul-surgery ONNX on Maxwell (sm_52) at 25.3 ms / N=90
+# (6.56× CPU EP). Raw torch.onnx.export output crashes with CUDNN failure 5003 —
+# always apply apply_matmul_reduce_surgery() before publishing to models/.
+# See docs/HPC_STAGE1_HW_FEASIBILITY.md §E7 and CLAUDE.md RULE-300.
+onnxruntime-gpu==1.20.1
 onnx>=1.16
