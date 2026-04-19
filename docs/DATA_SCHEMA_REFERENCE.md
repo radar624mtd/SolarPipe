@@ -2,7 +2,9 @@
 
 Auto-reference for all databases, tables, and CSV files in the project.  
 Use this before writing any SQL queries, feature lists, or data-source configs.  
-Last audited: 2026-04-09.
+Last audited: 2026-04-18.
+
+**⚠ Note:** The `staging.db` section below reflects pre-Tier-1/2 state. For current table schemas and row counts, see `data/src/solarpipe_data/database/schema.py` (ORM ground truth) and `docs/SOURCE_TO_SCHEMA_REFERENCE.md`. Key current additions: `rc_icme`, `hek_events`, `sep_events`, `pfss_topology`, `stereo_wind_hourly`, `goes_mag_hourly`, `magnetopause_crossings`, `supermag_hourly` (empty), `wind_waves_type2`, `hcs_tilt`, `pinn_expanded_flat` (1,974 × **148** cols — updated 2026-04-19 after EVE dimming ingest), `training_features` VIEW (9,418 × 133 cols).
 
 ---
 
@@ -420,8 +422,8 @@ OMNI backfill source: SPDF FTP `omni2_YYYY.dat` via `scripts/backfill_omni_hourl
 | `omni_150h_speed_median` | REAL | 0% | omni_hourly 150h pre-launch |
 | `sw_bz_ambient` | REAL | — | feature_vectors.sw_bz_ambient |
 | `delta_v_kms` | REAL | 0% | cme_speed_kms − omni_150h_speed_median |
-| `usflux` | REAL | — | SHARP magnetic flux (~59% NULL) |
-| `sharp_available` | INTEGER | 0% | binary: 1 if SHARP harpnum present |
+| `usflux` | REAL | 59% NULL | SHARP magnetic flux |
+| `sharp_available` | INTEGER | 0% | binary: 1 if SHARP harpnum present; **41% of events = 1** (809/1974, measured 2026-04-18) |
 
 ### Other PINN tables (staging.db)
 

@@ -6,8 +6,10 @@
 # Architecture (see docs/NEURAL_ENSEMBLE_PLAN.md, ADR-NE-001):
 #   Stage 1: TFT+PINN sidecar — trains flat encoder (105 features + masks)
 #             + sequence encoder (222 timesteps x 20 OMNI channels + masks)
-#             + quantile head (P10/P50/P90). Physics losses embedded (G4).
-#   Stage 2: ONNX inference — loaded from registry after sidecar export (G5).
+#             + quantile head (P10/P50/P90). Physics losses active (G4 ✅ 2748bbe).
+#             lambda_bound=0.1 + lambda_qorder=0.5 on from epoch 0.
+#             lambda_ode/lambda_mono=0.0 warm-start; enable post-convergence.
+#   Stage 2: ONNX inference — loaded from registry after sidecar export (G5 ✅).
 #
 # Data contract (see python/feature_schema.py — NEVER bypass):
 #   table: training_features  (133-col SQLite VIEW in staging.db)
@@ -200,12 +202,13 @@ stages:
       gradient_clip_norm: 1.0
       seed: 42
 
-      # --- Physics loss weights (G4) ---
-      # Set to 0.0 to disable until G4 physics_loss.py is wired
-      lambda_ode: 0.0       # drag ODE residual (enable after G4)
-      lambda_mono: 0.0      # monotonic decay hinge (enable after G4)
-      lambda_bound: 0.1     # transit time physical bounds [12h, 120h]
-      lambda_qorder: 0.5    # quantile ordering consistency
+      # --- Physics loss weights (G4 — fully wired, commit 2748bbe) ---
+      # lambda_ode / lambda_mono intentionally 0.0 for G7 warm-start: ODE residual
+      # adds gradient noise before P50 converges; enable once MAE < 15h.
+      lambda_ode: 0.0       # drag ODE residual (warm-start off; enable post-convergence)
+      lambda_mono: 0.0      # monotonic decay hinge (warm-start off; enable post-convergence)
+      lambda_bound: 0.1     # transit time physical bounds [12h, 120h] — ACTIVE
+      lambda_qorder: 0.5    # quantile ordering consistency — ACTIVE
 
       # --- Physics ODE parameters (for drag residual loss) ---
       # gamma0 is in km^-1 to match DragBasedModel.cs / ProgressiveDragPropagator.cs.

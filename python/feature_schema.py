@@ -21,16 +21,18 @@ phantom : 100 % NULL -- drop entirely; no mask or embedding passed
 
 Sequence channels (separate Parquet branch, NOT in flat schema)
 ---------------------------------------------------------------
-SEQUENCE_CHANNELS: 22 channels -- 20 OMNI pre-launch + 2 GOES MAG in-transit.
-Expansion to 24 channels (+SME_nT, +SMR_nT) is pending SuperMAG account
-activation and must be done atomically per RULE-213.
+SEQUENCE_CHANNELS: 20 channels -- 20 OMNI pre-launch channels.
+GOES MAG channels (goes_hp_nt, goes_bt_nt) are deferred until post-G7 eval;
+GOES ingest (ingest_goes_mag.py) must run and sequences must be rebuilt
+atomically with the schema change per RULE-213.
 
-RULE-213 checklist for SuperMAG expansion:
-  1. Update SEQUENCE_CHANNELS here (+2 channels, total -> 24)
-  2. Update build_pinn_sequences.py to extract those channels
-  3. Update n_seq_channels in python/tft_pinn_model.py
-  4. Update SEQ_CHANNELS in python/solarpipe_server.py
-  All four changes in ONE commit -- no intermediate 23-channel state.
+RULE-213 checklist for GOES expansion (N=20 -> 22):
+  1. Run ingest_goes_mag.py to populate goes_mag_hourly
+  2. Update SEQUENCE_CHANNELS here (+2 channels)
+  3. Update build_pinn_sequences.py to extract those channels
+  4. Rebuild data/sequences/*.parquet
+  5. Update N_SEQ_CHANNELS in python/tft_pinn_model.py / solarpipe_server.py
+  All five changes in ONE commit -- no intermediate 21-channel state.
 """
 from __future__ import annotations
 
@@ -370,16 +372,14 @@ _OMNI_CHANNELS: list[str] = [
 ]
 assert len(_OMNI_CHANNELS) == 20
 
-# GOES MAG in-transit channels (variable-length window, 1-h cadence)
-_GOES_CHANNELS: list[str] = ["goes_hp_nt", "goes_bt_nt"]
+# GOES MAG channels are deferred to post-G7 eval (RULE-213; see module docstring).
+# When activating: add ["goes_hp_nt", "goes_bt_nt"] here and update all 4 sites
+# atomically in one commit.
+_GOES_CHANNELS: list[str] = []  # deferred -- not yet in Parquet
 
-# Combined -- 22 channels.
-# SuperMAG expansion: append ["sme_nt", "smr_nt"] here AND in
-# build_pinn_sequences.py / tft_pinn_model.py / solarpipe_server.py
-# in ONE atomic commit (RULE-213).  No 23-channel intermediate state.
 SEQUENCE_CHANNELS: list[str] = _OMNI_CHANNELS + _GOES_CHANNELS
 N_SEQ_CHANNELS: int = len(SEQUENCE_CHANNELS)
-assert N_SEQ_CHANNELS == 22
+assert N_SEQ_CHANNELS == 20
 
 
 # ---------------------------------------------------------------------------
@@ -457,7 +457,7 @@ def print_summary() -> None:
     for t in sorted(tier_counts):
         print(f"  Tier {t} : {tier_counts[t]}")
     print()
-    print(f"Sequence channels : {N_SEQ_CHANNELS}  (22 now; 24 after SuperMAG)")
+    print(f"Sequence channels : {N_SEQ_CHANNELS}  (20 OMNI; +2 GOES post-G7)")
     print(sep)
 
 
