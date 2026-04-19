@@ -183,7 +183,11 @@ class SeqEncoder(nn.Module):
             "pos_enc", self._sinusoidal_pe(512, hidden_dim), persistent=False
         )
 
-        # Transformer layers
+        # Transformer layers.
+        # enable_nested_tensor=False: nested tensor requires norm_first=False on
+        # Maxwell (sm_52); with norm_first=True PyTorch silently falls back to
+        # the generic (CPU-speed) path even on CUDA. Disabling it explicitly keeps
+        # us on the cuBLAS-backed dense-tensor path (correct for sm_52 + RULE-300).
         encoder_layer = nn.TransformerEncoderLayer(
             d_model=hidden_dim,
             nhead=n_heads,
@@ -193,7 +197,11 @@ class SeqEncoder(nn.Module):
             norm_first=True,      # pre-norm (more stable)
             activation="gelu",
         )
-        self.transformer = nn.TransformerEncoder(encoder_layer, num_layers=n_layers)
+        self.transformer = nn.TransformerEncoder(
+            encoder_layer,
+            num_layers=n_layers,
+            enable_nested_tensor=False,   # Maxwell sm_52: force dense cuBLAS path
+        )
 
     @staticmethod
     def _sinusoidal_pe(max_len: int, dim: int) -> torch.Tensor:
@@ -222,8 +230,10 @@ class SeqEncoder(nn.Module):
         # Build key_padding_mask: True = ignore this timestep.
         # A timestep is fully unobserved when all channels are masked (0).
         # shape: (B, T)  bool
-        observed_ts = m_seq.sum(dim=-1) > 0   # (B, T) -- True = has data
-        key_padding_mask = ~observed_ts        # True = pad = ignore
+        # Use .any(dim=-1) rather than .sum(dim=-1) > 0 — traces to ReduceMax
+        # (not ReduceSum), which the ORT CUDA EP cuDNN path handles on sm_52.
+        observed_ts = (m_seq != 0).any(dim=-1)   # (B, T) -- True = has data
+        key_padding_mask = ~observed_ts           # True = pad = ignore
 
         # Guard: if ALL timesteps are masked for a row, the Transformer softmax
         # produces NaN (softmax of all -inf). Unmask at least timestep 0
@@ -244,15 +254,17 @@ class SeqEncoder(nn.Module):
         # Transformer with padding mask
         h = self.transformer(h, src_key_padding_mask=key_padding_mask)
 
-        # Mean-pool over observed timesteps only.
-        # If ALL timesteps are masked (denom==0), return zeros rather than NaN.
-        obs_float = observed_ts.unsqueeze(-1).float()  # (B, T, 1)
-        pooled = (h * obs_float).sum(dim=1)            # (B, hidden_dim)
-        denom = obs_float.sum(dim=1)                   # (B, 1)
-        # Avoid divide-by-zero; rows with no observed timesteps get zero vec
+        # Mean-pool over observed timesteps only via bmm — avoids 3D ReduceSum
+        # which fails on ORT CUDA EP cuDNN path for sm_52 (Maxwell).
+        # obs_float: (B, T, 1)
+        # pooled = bmm(h^T, obs_float): (B, d, T) @ (B, T, 1) → (B, d, 1) → squeeze
+        # denom  = bmm(obs^T, ones_T): (B, 1, T) @ (B, T, 1) → (B, 1, 1) → squeeze
+        obs_float = observed_ts.unsqueeze(-1).float()                         # (B, T, 1)
+        ones_T = torch.ones(B, T, 1, device=x_seq.device, dtype=torch.float32)
+        pooled = torch.bmm(h.transpose(1, 2), obs_float).squeeze(-1)         # (B, hidden_dim)
+        denom  = torch.bmm(obs_float.transpose(1, 2), ones_T).squeeze(-1)    # (B, 1)
         safe_denom = denom.clamp(min=1.0)
         pooled = pooled / safe_denom
-        # Zero out rows where nothing was observed (denom was 0)
         pooled = pooled * (denom > 0).float()
         return pooled
 

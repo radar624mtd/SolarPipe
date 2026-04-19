@@ -846,6 +846,10 @@ def _train_tft_pinn(
     grad_clip = float(hyperparameters.get("gradient_clip_norm", "1.0"))
     seed = int(hyperparameters.get("seed", "42"))
 
+    _device_pref = hyperparameters.get("device", "cuda" if torch.cuda.is_available() else "cpu")
+    device = torch.device(_device_pref if torch.cuda.is_available() or _device_pref == "cpu" else "cpu")
+    logger.info("TFT+PINN device: %s (requested=%s)", device, _device_pref)
+
     torch.manual_seed(seed)
 
     # ---- Build x_flat / m_flat / y from Arrow table ------------------------
@@ -908,10 +912,30 @@ def _train_tft_pinn(
             feat_std[j] = s if s > 1e-8 else 1.0
     x_flat = (x_flat - feat_mean) / feat_std
 
+    # ---- Move all tensors to device -----------------------------------------
+    x_flat = x_flat.to(device)
+    m_flat = m_flat.to(device)
+    x_seq  = x_seq.to(device)
+    m_seq  = m_seq.to(device)
+    y      = y.to(device)
+    v0     = v0.to(device)
+    v_sw   = v_sw.to(device)
+
+    # Fixed batch shapes → benchmark mode finds fastest cuDNN kernel per shape.
+    # AMP disabled: Maxwell (sm_52) has no native f16 ALU — f32 only (E5).
+    if device.type == "cuda":
+        torch.backends.cudnn.benchmark = True
+
     # ---- Model + loss ------------------------------------------------------
-    model = build_tft_pinn_model(hyperparameters)
+    model = build_tft_pinn_model(hyperparameters).to(device)
     loss_fn = build_pinn_loss(hyperparameters)
     opt = torch.optim.Adam(model.parameters(), lr=lr)
+    # Cosine annealing: smoothly decays lr from lr → lr_min over T_max epochs.
+    # eta_min = lr/100 keeps final LR non-zero for fine-grained convergence.
+    lr_min = float(hyperparameters.get("lr_min", lr / 100.0))
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+        opt, T_max=epochs, eta_min=lr_min
+    )
 
     split_n = max(1, int(0.8 * N))
     rng = torch.Generator().manual_seed(seed)
@@ -921,10 +945,31 @@ def _train_tft_pinn(
 
     n_batches = max(1, (len(idx_train) + batch_size - 1) // batch_size)
 
+    patience = int(hyperparameters.get("early_stopping_patience", "20"))
+    best_val_loss = float("inf")
+    best_state: dict | None = None
+    epochs_no_improve = 0
+
+    # Physics loss warm-start: ramp lambda_bound/lambda_qorder from 0 → target
+    # over `physics_warmup_epochs`. During warmup, the model sees only pinball
+    # loss so the quantile head can anchor P50 before physics regularisation fires.
+    physics_warmup = int(hyperparameters.get("physics_warmup_epochs", "50"))
+    target_lambda_bound  = loss_fn.lambda_bound
+    target_lambda_qorder = loss_fn.lambda_qorder
+
     for epoch in range(1, epochs + 1):
         if ct_event.is_set():
             logger.info("TFT+PINN training cancelled at epoch %d", epoch)
             break
+
+        # Linearly ramp physics lambdas from 0 → target over warmup window
+        if physics_warmup > 0 and epoch <= physics_warmup:
+            ramp = epoch / physics_warmup
+            loss_fn.lambda_bound  = target_lambda_bound  * ramp
+            loss_fn.lambda_qorder = target_lambda_qorder * ramp
+        else:
+            loss_fn.lambda_bound  = target_lambda_bound
+            loss_fn.lambda_qorder = target_lambda_qorder
 
         model.train()
         epoch_losses = []
@@ -963,7 +1008,26 @@ def _train_tft_pinn(
             else:
                 val_loss = train_loss
 
+        if val_loss < best_val_loss:
+            best_val_loss = val_loss
+            best_state = {k: v.cpu().clone() for k, v in model.state_dict().items()}
+            epochs_no_improve = 0
+        else:
+            epochs_no_improve += 1
+
+        scheduler.step()
         progress_cb(epoch, train_loss, val_loss)
+
+        if patience > 0 and epochs_no_improve >= patience:
+            logger.info(
+                "Early stopping at epoch %d — no improvement for %d epochs (best val=%.4f)",
+                epoch, patience, best_val_loss,
+            )
+            break
+
+    # Restore best weights before saving
+    if best_state is not None:
+        model.load_state_dict(best_state)
 
     # ---- Save artifact -----------------------------------------------------
     import uuid

@@ -195,12 +195,16 @@ stages:
       quantiles: [0.1, 0.5, 0.9] # P10/P50/P90
 
       # --- Training ---
-      learning_rate: 1.0e-3
+      # lr reduced 1e-3 -> 3e-4: G7 run1 showed high val oscillation (±1.0 loss)
+      # at 1e-3; 3e-4 should settle into the sub-5.85 floor observed at epoch 70.
+      # Cosine annealing decay: lr -> lr/100 over T_max=max_epochs.
+      learning_rate: 3.0e-4
       batch_size: 64
-      max_epochs: 200
-      early_stopping_patience: 20
+      max_epochs: 1000
+      early_stopping_patience: 75
       gradient_clip_norm: 1.0
       seed: 42
+      device: "cuda"            # Quadro M4000 (sm_52, 8 GB) — RULE-300 MatMul surgery at export
 
       # --- Physics loss weights (G4 — fully wired, commit 2748bbe) ---
       # lambda_ode / lambda_mono intentionally 0.0 for G7 warm-start: ODE residual
@@ -223,9 +227,9 @@ stages:
       # --- Sequence Parquet path (RULE-213 compatible, SuperMAG expansion hook) ---
       # Sidecar reads `{sequences_path}/{split}_sequences.parquet` per event and
       # joins on activity_id to reconstruct the (B, 222, 20) tensor.
-      sequences_path: "data/sequences"
+      sequences_path: "C:/Users/radar/SolarPipe/data/sequences"
       split: "train"            # used for the training pass; predict stage overrides to "holdout"
-      timeout_minutes: 90       # TFT+PINN on CPU needs more than the default 30 min (RULE-151)
+      timeout_minutes: 20       # CUDA: 500 epochs * ~1.5s = ~12 min; 20 min gives headroom
 
   # ---------------------------------------------------------------------------
   # Stage 2: ONNX inference (G6 round-trip)
@@ -353,8 +357,8 @@ stages:
       # `model_path` is populated after the sidecar ExportOnnx call (G6 wiring).
       # Keep as a relative path under SOLARPIPE_REGISTRY for portability.
       # RULE-300: point at the MatMul-surgery variant, not raw model.onnx.
-      model_path: "models/baselines/g6_tft_pinn_943e0a87/model_matmul_reduce.onnx"
-      sequences_path: "data/sequences"
+      model_path: "C:/Users/radar/SolarPipe/models/tft_pinn_aa409d9d/model_matmul_reduce.onnx"
+      sequences_path: "C:/Users/radar/SolarPipe/data/sequences"
       split: "holdout"          # inference runs against the 90-event holdout
       use_cuda_ep: "true"       # RULE-300: CUDA EP via ORT; requires MatMul-surgery ONNX
 
