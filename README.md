@@ -204,12 +204,6 @@ python solarpipe_server.py   # starts gRPC server on :50051
 
 ---
 
-## Benchmark honesty
-
-The benchmark summary (`docs/BENCHMARK_SUMMARY.md` in CTCE) shows B2 as `FAIL` with a 670% error against a GAMBIT target. The root cause is documented: GAMBIT samples mH as a nuisance parameter at 124.3 GeV while the framework computes at mH = 125.25 GeV. At the Higgs resonance, a 0.95 GeV shift changes Ωh² by ~12×. Resolution requires filtering the 19.5 GB SingletDM HDF5 to mH ∈ [125.0, 125.5]. The benchmark is retained in the repo exactly as-is; failures are not hidden.
-
----
-
 ## Credentials
 
 The pipeline reads credentials from environment variables:
